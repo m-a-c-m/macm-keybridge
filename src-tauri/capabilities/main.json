@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main window: local-only permissions. No HTTP, no shell, no file access.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://miguelacm.es" },
+        { "url": "https://miguelacm.es/*" },
+        { "url": "https://github.com/m-a-c-m/*" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "MACM KeyBridge",
+  "mainBinaryName": "macm-keybridge",
+  "version": "0.1.0",
+  "identifier": "es.miguelacm.keybridge",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1421",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "MACM KeyBridge",
+        "url": "index.html",
+        "width": 1040,
+        "height": 720,
+        "minWidth": 860,
+        "minHeight": 600,
+        "center": true,
+        "theme": "Dark",
+        "dragDropEnabled": false,
+        "backgroundColor": "#0a0a0f",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "publisher": "Miguel Angel Colorado Marin (MACM)",
+    "copyright": "Copyright (c) 2026 Miguel Angel Colorado Marin",
+    "category": "Utility",
+    "shortDescription": "Rescue broken laptop keys with a held bridge key",
+    "longDescription": "MACM KeyBridge silences the key you keep pressed as an electrical bridge on a damaged keyboard matrix, so the keys that depend on it work again. 100% local: no network, no telemetry, no accounts.",
+    "homepage": "https://miguelacm.es",
+    "licenseFile": "../LICENSE",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Spanish", "English"],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}
