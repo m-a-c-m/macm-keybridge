@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MACM KeyBridge",
   "mainBinaryName": "macm-keybridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "es.miguelacm.keybridge",
   "build": {
     "frontendDist": "../dist",
@@ -51,7 +51,8 @@
         "installMode": "currentUser",
         "languages": ["Spanish", "English"],
         "displayLanguageSelector": true,
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "./nsis-hooks.nsh"
       }
     }
   }

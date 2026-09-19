@@ -6,6 +6,7 @@ import Dashboard from "./views/Dashboard";
 import Keys from "./views/Keys";
 import Tester from "./views/Tester";
 import Settings from "./views/Settings";
+import Onboarding from "./views/Onboarding";
 
 export type View = "dashboard" | "keys" | "tester" | "settings";
 
@@ -67,6 +68,10 @@ export default function App() {
     return <div className="grid h-full place-items-center bg-background" />;
   }
 
+  if (!config.onboarded) {
+    return <Onboarding t={t} config={config} save={save} />;
+  }
+
   return (
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-border/40 bg-surface/60 p-4">
@@ -117,7 +122,7 @@ export default function App() {
           {view === "dashboard" && <Dashboard t={t} config={config} status={status} setStatus={setStatus} goTo={setView} />}
           {view === "keys" && <Keys t={t} config={config} save={save} />}
           {view === "tester" && <Tester t={t} />}
-          {view === "settings" && <Settings t={t} config={config} save={save} version={boot.version} />}
+          {view === "settings" && <Settings t={t} config={config} status={status} save={save} version={boot.version} />}
         </div>
       </main>
     </div>

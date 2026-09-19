@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useRef, useState } from "react";
 import { Button, Card, Keycap, PageHeader, SafetyNote, SectionTitle } from "../components/ui";
-import { api, type Config, type KeyObserved, type Rule } from "../lib/ipc";
+import type { Config, KeyObserved, Rule } from "../lib/ipc";
+import { useKeyStream, useSwallowBrowserKeys } from "../lib/useKeyStream";
 import type { T } from "../lib/i18n";
 import { hex, keySafety, MODIFIERS, newId, PRESETS, VK, vkName, type Preset } from "../lib/keys";
 
@@ -13,7 +13,7 @@ interface Props {
 
 const SETTLE_MS = 350;
 
-function fromCapture(downs: KeyObserved[]): Preset | null {
+export function fromCapture(downs: KeyObserved[]): Preset | null {
   const first = downs[0];
   if (!first) return null;
   const trigger = [...downs].reverse().find((d) => !MODIFIERS.has(d.vk)) ?? first;
@@ -31,32 +31,28 @@ export default function Keys({ t, config, save }: Props) {
   const downs = useRef<KeyObserved[]>([]);
   const settle = useRef<number | undefined>(undefined);
 
-  useEffect(() => {
-    if (!capturing) return;
+  const finish = () => {
+    window.clearTimeout(settle.current);
+    setCapturing(false);
+    const found = fromCapture(downs.current);
     downs.current = [];
-    api.setInspect(true);
-    const finish = () => {
-      setCapturing(false);
-      const found = fromCapture(downs.current);
-      setCandidate(found);
-      setName(found?.name ?? "");
-    };
-    const unlisten = listen<KeyObserved>("key", ({ payload }) => {
-      if (payload.injected) return;
-      if (payload.down) {
+    setCandidate(found);
+    setName(found?.name ?? "");
+  };
+
+  useSwallowBrowserKeys(capturing);
+  useKeyStream((events) => {
+    for (const e of events) {
+      if (e.injected) continue;
+      if (e.down) {
         if (downs.current.length === 0) settle.current = window.setTimeout(finish, SETTLE_MS);
-        if (!downs.current.some((d) => d.vk === payload.vk)) downs.current.push(payload);
+        if (!downs.current.some((d) => d.vk === e.vk)) downs.current.push(e);
       } else if (downs.current.length > 0) {
-        window.clearTimeout(settle.current);
         finish();
+        return;
       }
-    });
-    return () => {
-      window.clearTimeout(settle.current);
-      unlisten.then((u) => u());
-      api.setInspect(false);
-    };
-  }, [capturing]);
+    }
+  }, capturing);
 
   const exists = (p: Preset) => config.rules.some((r) => r.vk === p.vk && r.ext === p.ext);
 

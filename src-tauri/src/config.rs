@@ -24,7 +24,9 @@ pub struct Config {
     pub rules: Vec<Rule>,
     pub pause_hotkey: Option<String>,
     pub start_minimized: bool,
-    pub radio_guard: bool,
+    pub radio_block: bool,
+    pub radio_disabled_ids: Vec<String>,
+    pub onboarded: bool,
     pub notifications: bool,
     pub language: String,
     pub theme: String,
@@ -37,7 +39,9 @@ impl Default for Config {
             rules: Vec::new(),
             pause_hotkey: Some("Ctrl+Alt+B".into()),
             start_minimized: false,
-            radio_guard: true,
+            radio_block: false,
+            radio_disabled_ids: Vec::new(),
+            onboarded: false,
             notifications: true,
             language: "es".into(),
             theme: "dark".into(),
@@ -74,6 +78,8 @@ impl Config {
                 self.pause_hotkey = None;
             }
         }
+        self.radio_disabled_ids.retain(|id| !id.is_empty() && id.len() < 400);
+        self.radio_disabled_ids.truncate(16);
         if !matches!(self.language.as_str(), "es" | "en") {
             self.language = "es".into();
         }
@@ -89,6 +95,10 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn default_dir() -> Option<PathBuf> {
+        std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join(crate::IDENTIFIER))
+    }
+
     pub fn new(dir: &Path) -> Self {
         let _ = std::fs::create_dir_all(dir);
         Self { path: dir.join("config.json") }

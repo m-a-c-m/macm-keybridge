@@ -1,7 +1,6 @@
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 use windows::core::{w, HSTRING, PCWSTR};
-use windows::Devices::Radios::{Radio, RadioState};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::Registry::{
@@ -75,7 +74,7 @@ fn shell_execute(verb: PCWSTR, file: &str, params: &str, show: i32, wait: bool) 
         let mut code = 0u32;
         if !info.hProcess.is_invalid() {
             if wait {
-                WaitForSingleObject(info.hProcess, 30_000);
+                WaitForSingleObject(info.hProcess, 120_000);
                 let _ = GetExitCodeProcess(info.hProcess, &mut code);
             }
             let _ = CloseHandle(info.hProcess);
@@ -235,35 +234,106 @@ pub fn airplane_mode() -> Option<bool> {
     Some(value == 1)
 }
 
-pub struct RadioSnapshot(Vec<(String, bool)>);
 
-pub fn radio_snapshot() -> Option<RadioSnapshot> {
-    let radios = Radio::GetRadiosAsync().ok()?.get().ok()?;
-    let mut list = Vec::new();
-    for i in 0..radios.Size().ok()? {
-        let radio = radios.GetAt(i).ok()?;
-        let name = radio.Name().map(|n| n.to_string()).unwrap_or_default();
-        list.push((name, radio.State().ok()? == RadioState::On));
-    }
-    Some(RadioSnapshot(list))
+pub fn run_self_elevated(args: &[&str]) -> Result<u32, String> {
+    let params = args.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(" ");
+    shell_execute(w!("runas"), &exe_path()?, &params, SW_HIDE.0, true)
 }
 
-pub fn restore_radios(previous: &RadioSnapshot) -> usize {
-    let _ = Radio::RequestAccessAsync().and_then(|op| op.get());
-    let Some(radios) = Radio::GetRadiosAsync().ok().and_then(|op| op.get().ok()) else {
-        return 0;
+fn run_entry_value() -> Option<String> {
+    let mut buf = [0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            RUN_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr() as *mut _),
+            Some(&mut size),
+        )
+        .ok()
+        .ok()?;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+fn task_command() -> Option<String> {
+    let out = Command::new("schtasks")
+        .args(["/Query", "/TN", TASK_NAME, "/XML"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let bytes = out.stdout;
+    let text = if bytes.len() > 1 && bytes.iter().skip(1).step_by(2).take(64).all(|&b| b == 0) {
+        let wide: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        String::from_utf16_lossy(&wide)
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
     };
-    let mut restored = 0;
-    for i in 0..radios.Size().unwrap_or(0) {
-        let Ok(radio) = radios.GetAt(i) else { continue };
-        let name = radio.Name().map(|n| n.to_string()).unwrap_or_default();
-        let was_on = previous.0.iter().any(|(n, on)| *on && *n == name);
-        if was_on && radio.State().ok() != Some(RadioState::On) {
-            let ok = radio.SetStateAsync(RadioState::On).and_then(|op| op.get()).is_ok();
-            if ok && radio.State().ok() == Some(RadioState::On) {
-                restored += 1;
-            }
+    let start = text.find("<Command>")? + "<Command>".len();
+    let end = text[start..].find("</Command>")? + start;
+    Some(text[start..end].replace("&amp;", "&").replace("&quot;", "\""))
+}
+
+// A portable exe that was moved leaves autostart pointing at the old path.
+pub fn repair_autostart(elevated: bool) -> bool {
+    let Ok(exe) = exe_path() else { return false };
+    let exe = exe.to_lowercase();
+    if let Some(value) = run_entry_value() {
+        if !value.to_lowercase().contains(&exe) {
+            let _ = set_run_entry(true);
         }
     }
-    restored
+    match task_command() {
+        Some(cmd) if cmd.trim_matches('"').to_lowercase() != exe => {
+            if elevated {
+                create_task().is_err()
+            } else {
+                true
+            }
+        }
+        _ => false,
+    }
+}
+
+pub fn remove_autostart() -> Result<(), String> {
+    set_run_entry(false)?;
+    if task_exists() {
+        delete_task()?;
+    }
+    Ok(())
+}
+
+pub fn has_admin_task() -> bool {
+    task_exists()
+}
+
+fn reg_string(key: PCWSTR, value: PCWSTR) -> String {
+    let mut buf = [0u16; 256];
+    let mut size = (buf.len() * 2) as u32;
+    let ok = unsafe {
+        RegGetValueW(HKEY_LOCAL_MACHINE, key, value, RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as *mut _), Some(&mut size))
+            .is_ok()
+    };
+    if !ok {
+        return String::new();
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len])
+}
+
+pub fn os_description() -> String {
+    let key = w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+    format!(
+        "{} {} (build {})",
+        reg_string(key, w!("ProductName")),
+        reg_string(key, w!("DisplayVersion")),
+        reg_string(key, w!("CurrentBuild"))
+    )
 }

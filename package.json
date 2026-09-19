@@ -1,7 +1,7 @@
 {
   "name": "macm-keybridge",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MACM KeyBridge - rescue broken laptop keys with a held bridge key",
   "author": "Miguel Angel Colorado Marin (MACM) <https://miguelacm.es>",
   "license": "MIT",

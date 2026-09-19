@@ -2,7 +2,10 @@
 
 mod bridge;
 mod config;
+mod diagnostics;
+mod engine;
 mod hook;
+mod radio;
 mod system;
 mod tray;
 
@@ -15,6 +18,10 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowE
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 
+pub const IDENTIFIER: &str = "es.miguelacm.keybridge";
+const RADIO_ARG: &str = "--radio";
+const CLEANUP_ARG: &str = "--cleanup";
+
 #[derive(Clone, Copy)]
 enum Pause {
     Until(Instant),
@@ -25,10 +32,11 @@ pub struct AppState {
     store: Store,
     config: RwLock<Config>,
     pause: Mutex<Option<Pause>>,
-    hook_ok: AtomicBool,
     elevated: bool,
     first_run: bool,
     tray_hint_shown: AtomicBool,
+    autostart_stale: AtomicBool,
+    radio_busy: Mutex<()>,
 }
 
 impl AppState {
@@ -52,9 +60,12 @@ struct Status {
     blocking: bool,
     blocked_count: u64,
     hook_ok: bool,
+    events_seen: u64,
+    ms_since_last_event: Option<u64>,
     elevated: bool,
     active_rules: usize,
     airplane: Option<bool>,
+    autostart_stale: bool,
 }
 
 fn status(app: &AppHandle) -> Status {
@@ -68,32 +79,36 @@ fn status(app: &AppHandle) -> Status {
             Some(Pause::Until(t)) => Some(t.saturating_duration_since(Instant::now()).as_secs()),
             _ => None,
         },
-        blocking: state.effective_active() && state.hook_ok.load(Ordering::Relaxed),
-        blocked_count: hook::blocked_count(),
-        hook_ok: state.hook_ok.load(Ordering::Relaxed),
+        blocking: state.effective_active() && engine::is_running(),
+        blocked_count: engine::blocked_count(),
+        hook_ok: engine::is_running(),
+        events_seen: engine::seen_count(),
+        ms_since_last_event: engine::ms_since_last_event(),
         elevated: state.elevated,
         active_rules: config.rules.iter().filter(|r| r.enabled).count(),
         airplane: system::airplane_mode(),
+        autostart_stale: state.autostart_stale.load(Ordering::Relaxed),
     }
 }
 
 fn apply(app: &AppHandle) {
     let state = app.state::<AppState>();
-    hook::set_active(state.effective_active());
+    engine::set_active(state.effective_active());
     tray::refresh(app);
     let _ = app.emit("status", status(app));
 }
 
-fn persist(app: &AppHandle, mutate: impl FnOnce(&mut Config)) {
+fn persist(app: &AppHandle, mutate: impl FnOnce(&mut Config)) -> Config {
     let state = app.state::<AppState>();
     let snapshot = match state.config.write() {
         Ok(mut config) => {
             mutate(&mut config);
             config.clone()
         }
-        Err(_) => return,
+        Err(_) => return state.config(),
     };
     let _ = state.store.save(&snapshot);
+    snapshot
 }
 
 pub fn set_enabled(app: &AppHandle, on: bool) {
@@ -125,6 +140,14 @@ pub fn resume(app: &AppHandle) {
 fn notify(app: &AppHandle, title: &str, body: &str) {
     if app.state::<AppState>().config().notifications {
         let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
+fn lang_text(app: &AppHandle, es: &'static str, en: &'static str) -> &'static str {
+    if app.state::<AppState>().config().language == "en" {
+        en
+    } else {
+        es
     }
 }
 
@@ -167,38 +190,88 @@ fn spawn_pause_watch(app: AppHandle) {
     });
 }
 
-// Lenovo-style Fn hotkeys toggle airplane mode through the HID radio collection, which no
-// keyboard hook can see, so the only defence is to notice the switch and bring radios back.
-fn spawn_radio_guard(app: AppHandle) {
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RadioStatus {
+    devices: Vec<radio::RadioDevice>,
+    blocked: bool,
+    reenabled: bool,
+}
+
+fn radio_status_of(config: &Config) -> RadioStatus {
+    let devices = radio::list();
+    let reenabled = config.radio_block && devices.iter().any(|d| d.enabled);
+    RadioStatus { devices, blocked: config.radio_block, reenabled }
+}
+
+fn change_radio(ids: &[String], enable: bool, elevated: bool) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    if elevated {
+        radio::set_enabled(ids, enable);
+        return Ok(());
+    }
+    let mut args = vec![RADIO_ARG, if enable { "enable" } else { "disable" }];
+    args.extend(ids.iter().map(String::as_str));
+    system::run_self_elevated(&args).map(|_| ())
+}
+
+fn radio_block_on(app: &AppHandle) -> Result<RadioStatus, String> {
+    let state = app.state::<AppState>();
+    let _busy = state.radio_busy.lock().map_err(|e| e.to_string())?;
+    let targets: Vec<String> = radio::list().into_iter().filter(|d| d.enabled).map(|d| d.id).collect();
+    change_radio(&targets, false, state.elevated)?;
+    let now_disabled: Vec<String> =
+        radio::list().into_iter().filter(|d| !d.enabled && targets.contains(&d.id)).map(|d| d.id).collect();
+    if now_disabled.len() < targets.len() {
+        let _ = change_radio(&now_disabled, true, state.elevated);
+        return Err("device change failed".into());
+    }
+    let config = persist(app, |c| {
+        c.radio_block = true;
+        for id in now_disabled {
+            if !c.radio_disabled_ids.contains(&id) {
+                c.radio_disabled_ids.push(id);
+            }
+        }
+    });
+    Ok(radio_status_of(&config))
+}
+
+fn radio_block_off(app: &AppHandle) -> Result<RadioStatus, String> {
+    let state = app.state::<AppState>();
+    let _busy = state.radio_busy.lock().map_err(|e| e.to_string())?;
+    let ours = state.config().radio_disabled_ids;
+    let targets: Vec<String> = radio::list().into_iter().filter(|d| !d.enabled && ours.contains(&d.id)).map(|d| d.id).collect();
+    change_radio(&targets, true, state.elevated)?;
+    let still_disabled: Vec<String> = radio::list().into_iter().filter(|d| !d.enabled && ours.contains(&d.id)).map(|d| d.id).collect();
+    let config = persist(app, |c| {
+        c.radio_disabled_ids = still_disabled.clone();
+        c.radio_block = !still_disabled.is_empty();
+    });
+    if !still_disabled.is_empty() {
+        return Err("device change failed".into());
+    }
+    Ok(radio_status_of(&config))
+}
+
+fn startup_checks(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut last_airplane = system::airplane_mode();
-        let mut snapshot = system::radio_snapshot();
-        let mut last_snapshot = Instant::now();
-        loop {
-            std::thread::sleep(Duration::from_millis(600));
-            let airplane = system::airplane_mode();
-            let state = app.state::<AppState>();
-            let guarding = state.config().radio_guard && state.effective_active();
-            if airplane == Some(false) && last_snapshot.elapsed() > Duration::from_secs(5) {
-                snapshot = system::radio_snapshot();
-                last_snapshot = Instant::now();
+        let state = app.state::<AppState>();
+        let stale = system::repair_autostart(state.elevated);
+        state.autostart_stale.store(stale, Ordering::Relaxed);
+        let config = state.config();
+        if radio_status_of(&config).reenabled {
+            if state.elevated && radio_block_on(&app).is_ok() {
+                return;
             }
-            if guarding && last_airplane == Some(false) && airplane == Some(true) {
-                if let Some(previous) = &snapshot {
-                    let lang = state.config().language;
-                    let restored = system::restore_radios(previous);
-                    let es = lang != "en";
-                    let body = match (restored, es) {
-                        (0, true) => "Se activó el modo avión con el puente puesto y no se pudo revertir. Desactívalo desde la barra de tareas.",
-                        (0, false) => "Airplane mode was switched on while the bridge was active and could not be reverted. Turn it off from the taskbar.",
-                        (_, true) => "Modo avión accidental detectado: Wi-Fi y Bluetooth reactivados. Pausa KeyBridge si querías activarlo.",
-                        (_, false) => "Accidental airplane mode detected: Wi-Fi and Bluetooth restored. Pause KeyBridge if you meant it.",
-                    };
-                    notify(&app, "MACM KeyBridge", body);
-                    let _ = app.emit("status", status(&app));
-                }
-            }
-            last_airplane = airplane;
+            let body = lang_text(
+                &app,
+                "Una actualización de Windows o de drivers ha reactivado la tecla de modo avión del teclado. Abre KeyBridge > Ajustes para volver a anularla.",
+                "A Windows or driver update re-enabled the keyboard airplane-mode key. Open KeyBridge > Settings to block it again.",
+            );
+            notify(&app, "MACM KeyBridge", body);
         }
     });
 }
@@ -234,9 +307,11 @@ fn get_status(app: AppHandle) -> Status {
 
 #[tauri::command]
 fn save_config(app: AppHandle, config: Config) -> Result<Config, String> {
-    let config = config.validate()?;
+    let mut config = config.validate()?;
     let state = app.state::<AppState>();
     let previous = state.config();
+    config.radio_block = previous.radio_block;
+    config.radio_disabled_ids = previous.radio_disabled_ids.clone();
     if previous.pause_hotkey != config.pause_hotkey {
         if let Err(e) = register_hotkey(&app, config.pause_hotkey.as_deref()) {
             let _ = register_hotkey(&app, previous.pause_hotkey.as_deref());
@@ -244,7 +319,7 @@ fn save_config(app: AppHandle, config: Config) -> Result<Config, String> {
         }
     }
     state.store.save(&config)?;
-    hook::set_rules(&config.rules);
+    engine::set_rules(&config.rules);
     if let Ok(mut current) = state.config.write() {
         *current = config.clone();
     }
@@ -272,7 +347,12 @@ fn resume_now(app: AppHandle) -> Status {
 
 #[tauri::command]
 fn set_inspect(on: bool) {
-    hook::set_inspect(on);
+    engine::set_inspect(on);
+}
+
+#[tauri::command]
+fn take_events() -> Vec<hook::Observed> {
+    engine::take_events()
 }
 
 #[tauri::command]
@@ -281,8 +361,10 @@ async fn get_autostart() -> String {
 }
 
 #[tauri::command]
-async fn set_autostart(mode: String) -> Result<String, String> {
-    system::set_autostart(&mode).map(str::to_string)
+async fn set_autostart(app: AppHandle, mode: String) -> Result<String, String> {
+    let result = system::set_autostart(&mode).map(str::to_string);
+    app.state::<AppState>().autostart_stale.store(false, Ordering::Relaxed);
+    result
 }
 
 #[tauri::command]
@@ -290,6 +372,48 @@ fn relaunch_admin(app: AppHandle) -> Result<(), String> {
     system::relaunch_as_admin()?;
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+async fn radio_status(app: AppHandle) -> RadioStatus {
+    radio_status_of(&app.state::<AppState>().config())
+}
+
+#[tauri::command]
+async fn radio_set_blocked(app: AppHandle, blocked: bool) -> Result<RadioStatus, String> {
+    if blocked {
+        radio_block_on(&app)
+    } else {
+        radio_block_off(&app)
+    }
+}
+
+#[tauri::command]
+async fn undo_all(app: AppHandle) -> Result<(), String> {
+    let radio = radio_block_off(&app).err();
+    let autostart = system::remove_autostart().err();
+    app.state::<AppState>().autostart_stale.store(false, Ordering::Relaxed);
+    match (radio, autostart) {
+        (None, None) => Ok(()),
+        (r, a) => Err([r, a].into_iter().flatten().collect::<Vec<_>>().join("; ")),
+    }
+}
+
+#[tauri::command]
+async fn export_diagnostics(app: AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let report = diagnostics::Report {
+        version: app.package_info().version.to_string(),
+        elevated: state.elevated,
+        hook_ok: engine::is_running(),
+        blocking: state.effective_active(),
+        config: state.config(),
+        radios: radio::list(),
+        autostart: system::autostart_mode(),
+        events: engine::history(),
+    };
+    let dir = app.path().desktop_dir().or_else(|_| app.path().document_dir()).map_err(|e| e.to_string())?;
+    diagnostics::write(&report, &dir)
 }
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -300,34 +424,27 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if first_run {
         let _ = store.save(&config);
     }
-    let start_hidden = std::env::args().any(|a| a == system::MINIMIZED_ARG) || config.start_minimized;
+    let start_hidden = std::env::args().any(|a| a == system::MINIMIZED_ARG) || (config.start_minimized && config.onboarded);
 
-    let (tx, rx) = std::sync::mpsc::channel::<hook::Observed>();
-    let hook_result = hook::start(tx);
-    hook::set_rules(&config.rules);
+    let hook_result = engine::start();
+    engine::set_rules(&config.rules);
 
     app.manage(AppState {
         store,
         config: RwLock::new(config.clone()),
         pause: Mutex::new(None),
-        hook_ok: AtomicBool::new(hook_result.is_ok()),
         elevated: system::is_elevated(),
         first_run,
         tray_hint_shown: AtomicBool::new(start_hidden),
-    });
-
-    let forward = handle.clone();
-    std::thread::spawn(move || {
-        for event in rx {
-            let _ = forward.emit("key", event);
-        }
+        autostart_stale: AtomicBool::new(false),
+        radio_busy: Mutex::new(()),
     });
 
     let _ = register_hotkey(&handle, config.pause_hotkey.as_deref());
     tray::create(&handle)?;
     apply(&handle);
     spawn_pause_watch(handle.clone());
-    spawn_radio_guard(handle.clone());
+    startup_checks(handle.clone());
 
     if let Err(e) = hook_result {
         let body = format!("No se pudo instalar el hook de teclado / keyboard hook failed: {e}");
@@ -339,7 +456,44 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn radio_helper(args: &[String]) -> i32 {
+    let enable = args.first().map(String::as_str) == Some("enable");
+    let ids = args.get(1..).unwrap_or_default();
+    radio::set_enabled(ids, enable);
+    let pending = radio::list().into_iter().filter(|d| ids.contains(&d.id) && d.enabled != enable).count();
+    pending as i32
+}
+
+// Invoked by the uninstaller: reverts every system change KeyBridge made.
+fn cleanup_helper() -> i32 {
+    let Some(dir) = Store::default_dir() else { return 0 };
+    let store = Store::new(&dir);
+    let mut config = store.load();
+    let to_enable: Vec<String> =
+        radio::list().into_iter().filter(|d| !d.enabled && config.radio_disabled_ids.contains(&d.id)).map(|d| d.id).collect();
+    let needs_admin = !to_enable.is_empty() || system::has_admin_task();
+    if needs_admin && !system::is_elevated() {
+        return match system::run_self_elevated(&[CLEANUP_ARG]) {
+            Ok(code) => code as i32,
+            Err(_) => 1,
+        };
+    }
+    radio::set_enabled(&to_enable, true);
+    let failed = system::remove_autostart().is_err();
+    config.radio_block = false;
+    config.radio_disabled_ids.clear();
+    let _ = store.save(&config);
+    failed as i32
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some(engine::ENGINE_ARG) => std::process::exit(engine::run_child()),
+        Some(RADIO_ARG) => std::process::exit(radio_helper(&args[1..])),
+        Some(CLEANUP_ARG) => std::process::exit(cleanup_helper()),
+        _ => {}
+    }
     system::wait_for_previous_instance();
 
     let app = tauri::Builder::default()
@@ -354,13 +508,12 @@ fn main() {
                     if !state.config().active {
                         return;
                     }
-                    let lang = state.config().language;
                     if state.is_paused() {
                         resume(app);
-                        notify(app, "MACM KeyBridge", if lang == "en" { "Bridge resumed" } else { "Puente reanudado" });
+                        notify(app, "MACM KeyBridge", lang_text(app, "Puente reanudado", "Bridge resumed"));
                     } else {
                         pause(app, 0);
-                        notify(app, "MACM KeyBridge", if lang == "en" { "Bridge paused" } else { "Puente en pausa" });
+                        notify(app, "MACM KeyBridge", lang_text(app, "Puente en pausa", "Bridge paused"));
                     }
                 })
                 .build(),
@@ -370,16 +523,15 @@ fn main() {
         .setup(setup)
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                hook::set_inspect(false);
+                engine::set_inspect(false);
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
                 if !state.tray_hint_shown.swap(true, Ordering::SeqCst) {
-                    let lang = state.config().language;
-                    let body = if lang == "en" {
-                        "KeyBridge keeps working from the system tray."
-                    } else {
-                        "KeyBridge sigue funcionando desde la bandeja del sistema."
-                    };
+                    let body = lang_text(
+                        app,
+                        "KeyBridge sigue funcionando desde la bandeja del sistema (junto al reloj).",
+                        "KeyBridge keeps working from the system tray (next to the clock).",
+                    );
                     notify(app, "MACM KeyBridge", body);
                 }
             }
@@ -392,9 +544,14 @@ fn main() {
             pause_for,
             resume_now,
             set_inspect,
+            take_events,
             get_autostart,
             set_autostart,
             relaunch_admin,
+            radio_status,
+            radio_set_blocked,
+            undo_all,
+            export_diagnostics,
         ])
         .build(tauri::generate_context!());
 
@@ -407,9 +564,9 @@ fn main() {
     };
 
     // Closing the panel destroys its WebView to free memory; the hook and tray keep running.
-    app.run(|_handle, event| {
-        if let RunEvent::ExitRequested { code: None, api, .. } = event {
-            api.prevent_exit();
-        }
+    app.run(|_handle, event| match event {
+        RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+        RunEvent::Exit => engine::shutdown(),
+        _ => {}
     });
 }

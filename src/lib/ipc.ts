@@ -15,7 +15,9 @@ export interface Config {
   rules: Rule[];
   pauseHotkey: string | null;
   startMinimized: boolean;
-  radioGuard: boolean;
+  radioBlock: boolean;
+  radioDisabledIds: string[];
+  onboarded: boolean;
   notifications: boolean;
   language: "es" | "en";
   theme: "dark" | "light" | "system";
@@ -28,9 +30,24 @@ export interface Status {
   blocking: boolean;
   blockedCount: number;
   hookOk: boolean;
+  eventsSeen: number;
+  msSinceLastEvent: number | null;
   elevated: boolean;
   activeRules: number;
   airplane: boolean | null;
+  autostartStale: boolean;
+}
+
+export interface Device {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface RadioStatus {
+  devices: Device[];
+  blocked: boolean;
+  reenabled: boolean;
 }
 
 export interface Bootstrap {
@@ -64,4 +81,9 @@ export const api = {
   getAutostart: () => invoke<AutostartMode>("get_autostart"),
   setAutostart: (mode: AutostartMode) => invoke<AutostartMode>("set_autostart", { mode }),
   relaunchAdmin: () => invoke<void>("relaunch_admin"),
+  takeEvents: () => invoke<KeyObserved[]>("take_events"),
+  radioStatus: () => invoke<RadioStatus>("radio_status"),
+  radioSetBlocked: (blocked: boolean) => invoke<RadioStatus>("radio_set_blocked", { blocked }),
+  undoAll: () => invoke<void>("undo_all"),
+  exportDiagnostics: () => invoke<string>("export_diagnostics"),
 };

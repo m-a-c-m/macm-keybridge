@@ -115,12 +115,23 @@ export default function Dashboard({ t, config, status, setStatus, goTo }: Props)
         <Card>
           <SectionTitle>{t("dash.engine")}</SectionTitle>
           <Row label={t("dash.engine")} ok={status.hookOk} value={status.hookOk ? t("dash.engineOk") : t("dash.engineFail")} />
+          <Row label={t("dash.keysSeen")} ok={status.eventsSeen > 0} value={status.eventsSeen > 0 ? status.eventsSeen.toLocaleString(config.language) : t("dash.keysSeenNone")} />
           <Row label={t("dash.admin")} ok={status.elevated} value={status.elevated ? t("dash.adminOk") : t("dash.adminNo")} />
           {status.airplane !== null && (
             <Row label={t("dash.airplane")} ok={!status.airplane} value={status.airplane ? t("dash.airplaneOn") : t("dash.airplaneOff")} />
           )}
         </Card>
       </div>
+
+      <Card className="mt-4">
+        <SectionTitle>{t("dash.howTitle")}</SectionTitle>
+        <ul className="flex list-disc flex-col gap-1.5 pl-5 text-xs leading-relaxed text-text-muted">
+          <li>{t("dash.how1")}</li>
+          <li>{t("dash.how2")}</li>
+          <li>{t("dash.how3")}</li>
+          <li>{t("dash.how4")}</li>
+        </ul>
+      </Card>
 
       {!status.elevated && (
         <Card className="mt-4 flex items-center justify-between gap-6">

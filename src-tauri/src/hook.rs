@@ -1,8 +1,8 @@
 use crate::bridge::{Bridge, KeyEvent};
 use crate::config::Rule;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::Sender;
+use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
@@ -29,9 +29,14 @@ static BLOCKED: AtomicU64 = AtomicU64::new(0);
 static HOOK: AtomicIsize = AtomicIsize::new(0);
 static THREAD: AtomicU32 = AtomicU32::new(0);
 static COMBO_TIMER: AtomicUsize = AtomicUsize::new(0);
-static SINK: OnceLock<(Sender<Observed>, Instant)> = OnceLock::new();
+static START: OnceLock<Instant> = OnceLock::new();
+static EVENTS: Mutex<VecDeque<Observed>> = Mutex::new(VecDeque::new());
+static SEEN: AtomicU64 = AtomicU64::new(0);
+static LAST_SEEN_MS: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Clone, Serialize)]
+const EVENTS_CAP: usize = 2000;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Observed {
     pub vk: u16,
@@ -43,8 +48,8 @@ pub struct Observed {
     pub t: u64,
 }
 
-pub fn start(sink: Sender<Observed>) -> Result<(), String> {
-    let _ = SINK.set((sink, Instant::now()));
+pub fn start() -> Result<(), String> {
+    let _ = START.set(Instant::now());
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
     std::thread::Builder::new()
         .name("keybridge-hook".into())
@@ -92,7 +97,28 @@ pub fn blocked_count() -> u64 {
 }
 
 pub fn set_inspect(on: bool) {
+    if on {
+        if let Ok(mut e) = EVENTS.lock() {
+            e.clear();
+        }
+    }
     INSPECT.store(on, Ordering::Relaxed);
+}
+
+pub fn take_events() -> Vec<Observed> {
+    EVENTS.lock().map(|mut e| e.drain(..).collect()).unwrap_or_default()
+}
+
+pub fn seen_count() -> u64 {
+    SEEN.load(Ordering::Relaxed)
+}
+
+pub fn ms_since_last_event() -> Option<u64> {
+    let start = START.get()?;
+    match SEEN.load(Ordering::Relaxed) {
+        0 => None,
+        _ => Some((start.elapsed().as_millis() as u64).saturating_sub(LAST_SEEN_MS.load(Ordering::Relaxed))),
+    }
 }
 
 pub fn set_rules(rules: &[Rule]) {
@@ -221,17 +247,16 @@ unsafe extern "system" fn callback(code: i32, wparam: WPARAM, lparam: LPARAM) ->
         }
     }
 
+    let t = START.get().map(|s| s.elapsed().as_millis() as u64).unwrap_or(0);
+    SEEN.fetch_add(1, Ordering::Relaxed);
+    LAST_SEEN_MS.store(t, Ordering::Relaxed);
     if INSPECT.load(Ordering::Relaxed) {
-        if let Some((sink, started)) = SINK.get() {
-            let _ = sink.send(Observed {
-                vk: ev.vk,
-                scan: ev.scan,
-                ext: ev.ext,
-                down,
-                injected,
-                blocked,
-                t: started.elapsed().as_millis() as u64,
-            });
+        let observed = Observed { vk: ev.vk, scan: ev.scan, ext: ev.ext, down, injected, blocked, t };
+        if let Ok(mut events) = EVENTS.lock() {
+            if events.len() >= EVENTS_CAP {
+                events.pop_front();
+            }
+            events.push_back(observed);
         }
     }
 

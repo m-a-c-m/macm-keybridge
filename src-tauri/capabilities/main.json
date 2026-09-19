@@ -12,6 +12,7 @@
         { "url": "https://miguelacm.es/*" },
         { "url": "https://github.com/m-a-c-m/*" }
       ]
-    }
+    },
+    "opener:allow-reveal-item-in-dir"
   ]
 }
