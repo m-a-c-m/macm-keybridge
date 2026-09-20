@@ -7,13 +7,15 @@ import Keys from "./views/Keys";
 import Tester from "./views/Tester";
 import Settings from "./views/Settings";
 import Onboarding from "./views/Onboarding";
+import Diagnose from "./views/Diagnose";
 
-export type View = "dashboard" | "keys" | "tester" | "settings";
+export type View = "dashboard" | "keys" | "tester" | "diagnose" | "settings";
 
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "nav.dashboard", icon: "M3 12l9-8 9 8M5 10v10h14V10" },
   { id: "keys", label: "nav.keys", icon: "M4 14h6v6H4zM14 14h6v6h-6zM7 14v-3a5 5 0 0110 0v3" },
   { id: "tester", label: "nav.tester", icon: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10" },
+  { id: "diagnose", label: "nav.diagnose", icon: "M12 3a6 6 0 016 6c0 2.5-1.5 3.5-2 5H8c-.5-1.5-2-2.5-2-5a6 6 0 016-6zM9 19h6M10 22h4" },
   { id: "settings", label: "nav.settings", icon: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 002.9-1.2V3a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" },
 ];
 
@@ -122,6 +124,7 @@ export default function App() {
           {view === "dashboard" && <Dashboard t={t} config={config} status={status} setStatus={setStatus} goTo={setView} />}
           {view === "keys" && <Keys t={t} config={config} save={save} />}
           {view === "tester" && <Tester t={t} />}
+          {view === "diagnose" && <Diagnose t={t} />}
           {view === "settings" && <Settings t={t} config={config} status={status} save={save} version={boot.version} />}
         </div>
       </main>

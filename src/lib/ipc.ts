@@ -44,6 +44,13 @@ export interface Device {
   enabled: boolean;
 }
 
+export interface Check {
+  id: string;
+  level: "ok" | "warn" | "info";
+  value: string;
+  fix: string | null;
+}
+
 export interface RadioStatus {
   devices: Device[];
   blocked: boolean;
@@ -86,4 +93,6 @@ export const api = {
   radioSetBlocked: (blocked: boolean) => invoke<RadioStatus>("radio_set_blocked", { blocked }),
   undoAll: () => invoke<void>("undo_all"),
   exportDiagnostics: () => invoke<string>("export_diagnostics"),
+  systemChecks: () => invoke<Check[]>("system_checks"),
+  applyFix: (fix: string) => invoke<Check[]>("apply_fix", { fix }),
 };

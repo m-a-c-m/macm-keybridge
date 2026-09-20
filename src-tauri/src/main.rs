@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod checks;
 mod config;
 mod diagnostics;
 mod engine;
@@ -375,6 +376,21 @@ fn relaunch_admin(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn system_checks() -> Vec<checks::Check> {
+    checks::run()
+}
+
+#[tauri::command]
+async fn apply_fix(fix: String) -> Result<Vec<checks::Check>, String> {
+    match fix.as_str() {
+        "filterKeys" => checks::set_filter_keys(false)?,
+        "stickyKeys" => checks::set_sticky_keys(false)?,
+        _ => return Err("unknown fix".into()),
+    }
+    Ok(checks::run())
+}
+
+#[tauri::command]
 async fn radio_status(app: AppHandle) -> RadioStatus {
     radio_status_of(&app.state::<AppState>().config())
 }
@@ -548,6 +564,8 @@ fn main() {
             get_autostart,
             set_autostart,
             relaunch_admin,
+            system_checks,
+            apply_fix,
             radio_status,
             radio_set_blocked,
             undo_all,
