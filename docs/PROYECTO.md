@@ -12,7 +12,8 @@
 6. [Tecla de modo avión](#6-tecla-de-modo-avión)
 7. [Reversibilidad](#7-reversibilidad)
 8. [Errores encontrados durante el desarrollo](#8-errores-encontrados-durante-el-desarrollo)
-9. [Roadmap](#9-roadmap)
+9. [Sustitución permanente](#9-sustitución-permanente-scancode-map)
+10. [Roadmap](#10-roadmap)
 
 ---
 
@@ -59,7 +60,7 @@ colecciones HID:
 - Silenciar por completo una tecla que esté pisada físicamente (lo que hace KeyBridge).
 - Anular la tecla de modo avión del teclado desactivando su colección HID.
 - Detectar causas de software (teclas filtro, remapeos residuales, filtros de teclado, drivers).
-- Sustituir teclas: que combinaciones de teclas que sí funcionan escriban 3/E/D/C (pendiente).
+- Sustituir teclas: que una tecla que no se usa escriba 3/E/D/C, incluso en la pantalla de inicio de sesión.
 - Diagnosticar y explicar, que es lo que evita que el usuario pierda horas.
 
 ## 4. Arquitectura
@@ -78,7 +79,7 @@ macm-keybridge.exe                     proceso de interfaz (Tauri v2 + React)
 - Al cerrar la interfaz se destruye la ventana (WebView fuera de memoria): ~9 MB + 4 MB en reposo.
 
 Ficheros clave: `src-tauri/src/bridge.rs` (lógica pura + 11 tests), `hook.rs` (Win32),
-`engine.rs` (proceso motor e IPC), `radio.rs` (SetupAPI), `system.rs` (elevación, autoarranque,
+`engine.rs` (proceso motor e IPC), `radio.rs` (SetupAPI), `remap.rs` (Scancode Map + 3 tests), `checks.rs` (comprobaciones), `system.rs` (elevación, autoarranque,
 registro), `diagnostics.rs` (informe).
 
 ## 5. Decisiones y por qué
@@ -127,7 +128,7 @@ haya desactivado el usuario por su cuenta.
 ## 9. Sustitución permanente (Scancode Map)
 
 Para teclas que no responden nunca: una tecla que el usuario no usa pasa a escribir la rota. Se
-guarda en `HKLMSYSTEMCurrentControlSetControlKeyboard LayoutScancode Map` con el formato
+guarda en `HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout\Scancode Map` con el formato
 documentado por Microsoft: 8 bytes a cero, número de entradas (mapeos + 1), un DWORD por mapeo con
 el código nuevo en la palabra alta y el viejo en la baja, y un DWORD a cero de cierre. Las teclas
 extendidas llevan el prefijo `0xE0`.
@@ -143,5 +144,5 @@ desinstalar.
 1. Asistente que prueba teclas candidatas y recomienda la mejor tecla puente.
 2. Modo capa (mantener una tecla y pulsar otra) como alternativa sin reiniciar.
 3. Pausa automática al conectar un teclado externo y aviso sobre la pantalla de inicio de sesión.
-3. README con la estructura estándar, workflow de release e icono, y publicación en GitHub.
-4. Ficha descargable en miguelacm.es/tools.
+4. README con la estructura estándar, workflow de release e icono, y publicación en GitHub.
+5. Ficha descargable en miguelacm.es/tools.
