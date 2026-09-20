@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Card, Keycap, PageHeader, SafetyNote, SectionTitle } from "../components/ui";
 import { api, type Config, type KeyObserved, type RemapStatus, type Substitution } from "../lib/ipc";
-import type { T } from "../lib/i18n";
+import type { Lang, T } from "../lib/i18n";
+import KeyGuide from "../components/KeyGuide";
+import type { GuideKey } from "../lib/guide";
 import { hex, keySafety, KEYBOARD, vkName } from "../lib/keys";
 import { useKeyStream, useSwallowBrowserKeys } from "../lib/useKeyStream";
 
 interface Props {
   t: T;
+  lang: Lang;
   config: Config;
   save: (c: Config) => Promise<boolean>;
 }
 
 const TARGETS = KEYBOARD.flat().filter((k) => k.vk >= 0x30 && k.vk <= 0x5a);
 
-export default function Substitute({ t, config, save }: Props) {
+export default function Substitute({ t, lang, config, save }: Props) {
   const [status, setStatus] = useState<RemapStatus | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [source, setSource] = useState<KeyObserved | null>(null);
@@ -67,6 +70,17 @@ export default function Substitute({ t, config, save }: Props) {
     ];
     setSource(null);
     await apply(next);
+  };
+
+  const pickSource = async (key: GuideKey) => {
+    const scan = await api.scanForVk(key.vk);
+    if (!scan) {
+      setError(t("manual.noScan"));
+      return;
+    }
+    setError(null);
+    setCapturing(false);
+    setSource({ vk: key.vk, scan, ext: key.ext, down: true, injected: false, blocked: false, t: 0 });
   };
 
   const remove = (sub: Substitution) =>
@@ -133,7 +147,9 @@ export default function Substitute({ t, config, save }: Props) {
         )}
       </Card>
 
-      <SectionTitle>{t("sub.listTitle")}</SectionTitle>
+      <KeyGuide t={t} lang={lang} mode="swap" onPick={pickSource} pickLabel={t("manual.sacrifice")} />
+
+      <SectionTitle className="mt-5">{t("sub.listTitle")}</SectionTitle>
       {config.substitutions.length === 0 ? (
         <p className="text-sm text-text-muted">{t("sub.none")}</p>
       ) : (

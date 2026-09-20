@@ -13,7 +13,8 @@
 7. [Reversibilidad](#7-reversibilidad)
 8. [Errores encontrados durante el desarrollo](#8-errores-encontrados-durante-el-desarrollo)
 9. [Sustitución permanente](#9-sustitución-permanente-scancode-map)
-10. [Roadmap](#10-roadmap)
+10. [Manual de teclas](#10-manual-de-teclas)
+11. [Roadmap](#11-roadmap)
 
 ---
 
@@ -139,10 +140,25 @@ y borrando el valor con el ayudante `--remap` (bytes exactos `00×8 · 02 00 00 
 00 00 00 00`). Se deshace desde la propia pantalla, desde «Deshacer todos los cambios» y al
 desinstalar.
 
-## 10. Roadmap
+## 10. Manual de teclas
 
-1. Asistente que prueba teclas candidatas y recomienda la mejor tecla puente.
-2. Modo capa (mantener una tecla y pulsar otra) como alternativa sin reiniciar.
-3. Pausa automática al conectar un teclado externo y aviso sobre la pantalla de inicio de sesión.
-4. README con la estructura estándar, workflow de release e icono, y publicación en GitHub.
-5. Ficha descargable en miguelacm.es/tools.
+`src/lib/guide.ts` describe 28 teclas candidatas: qué hace cada una sola, qué hace con Fn en un
+Lenovo LOQ, si conviene como tecla puente y si conviene como tecla sacrificada, más avisos
+concretos (la que activa el modo avión, las que al encender el portátil pueden abrir la BIOS o el
+menú de arranque). Los textos van en español e inglés en el propio fichero, porque son fichas y no
+cadenas sueltas de interfaz.
+
+En «Teclas puente» y en «Sustituir teclas» se muestran primero las recomendadas, listas para
+elegirlas de un clic; el manual completo solo aparece si el usuario pulsa «Ver qué hace cada
+tecla». El código de escaneo de la tecla elegida se pide a Windows (`scan_for_vk`), así que no hay
+tablas de códigos duplicadas.
+
+Las funciones de Fn varían entre modelos, así que la primera línea del manual avisa de que manda
+el icono impreso en la tecla.
+
+## 11. Roadmap
+
+1. Modo capa (mantener una tecla y pulsar otra) como alternativa sin reiniciar.
+2. Pausa automática al conectar un teclado externo y aviso sobre la pantalla de inicio de sesión.
+3. README con la estructura estándar, workflow de release e icono, y publicación en GitHub.
+4. Ficha descargable en miguelacm.es/tools.

@@ -5,8 +5,8 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <section className={`glass rounded-2xl p-5 ${className}`}>{children}</section>;
 }
 
-export function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="mb-3 text-xs font-semibold tracking-wider text-text-muted uppercase">{children}</h2>;
+export function SectionTitle({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <h2 className={`mb-3 text-xs font-semibold tracking-wider text-text-muted uppercase ${className}`}>{children}</h2>;
 }
 
 type Variant = "primary" | "ghost" | "danger" | "outline";

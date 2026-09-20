@@ -124,10 +124,10 @@ export default function App() {
             </div>
           )}
           {view === "dashboard" && <Dashboard t={t} config={config} status={status} setStatus={setStatus} goTo={setView} />}
-          {view === "keys" && <Keys t={t} config={config} save={save} />}
+          {view === "keys" && <Keys t={t} lang={config.language} config={config} save={save} />}
           {view === "tester" && <Tester t={t} />}
           {view === "diagnose" && <Diagnose t={t} />}
-          {view === "substitute" && <Substitute t={t} config={config} save={save} />}
+          {view === "substitute" && <Substitute t={t} lang={config.language} config={config} save={save} />}
           {view === "settings" && <Settings t={t} config={config} status={status} save={save} version={boot.version} />}
         </div>
       </main>

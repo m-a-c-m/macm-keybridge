@@ -1,12 +1,15 @@
 import { useRef, useState } from "react";
 import { Button, Card, Keycap, PageHeader, SafetyNote, SectionTitle } from "../components/ui";
-import type { Config, KeyObserved, Rule } from "../lib/ipc";
+import { api, type Config, type KeyObserved, type Rule } from "../lib/ipc";
 import { useKeyStream, useSwallowBrowserKeys } from "../lib/useKeyStream";
-import type { T } from "../lib/i18n";
+import type { Lang, T } from "../lib/i18n";
 import { hex, keySafety, MODIFIERS, newId, PRESETS, VK, vkName, type Preset } from "../lib/keys";
+import KeyGuide from "../components/KeyGuide";
+import type { GuideKey } from "../lib/guide";
 
 interface Props {
   t: T;
+  lang: Lang;
   config: Config;
   save: (c: Config) => Promise<boolean>;
 }
@@ -23,7 +26,7 @@ export function fromCapture(downs: KeyObserved[]): Preset | null {
   return { name: trigger.vk === VK.F23 ? "Copilot" : name, vk: trigger.vk, scan: trigger.scan, ext: trigger.ext, companions };
 }
 
-export default function Keys({ t, config, save }: Props) {
+export default function Keys({ t, lang, config, save }: Props) {
   const [capturing, setCapturing] = useState(false);
   const [candidate, setCandidate] = useState<Preset | null>(null);
   const [name, setName] = useState("");
@@ -72,6 +75,19 @@ export default function Keys({ t, config, save }: Props) {
     save({ ...config, rules: config.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 
   const removeRule = (id: string) => save({ ...config, rules: config.rules.filter((r) => r.id !== id) });
+
+  const pickFromGuide = async (key: GuideKey) => {
+    const scan = (await api.scanForVk(key.vk)) || PRESETS.find((p) => p.vk === key.vk)?.scan || 0;
+    if (!scan) {
+      setNotice(t("manual.noScan"));
+      return;
+    }
+    const copilot = key.vk === VK.F23;
+    const name = copilot ? "Copilot" : vkName(key.vk);
+    setNotice(null);
+    setCandidate({ name, vk: key.vk, scan, ext: key.ext, companions: copilot ? [VK.LWIN, VK.LSHIFT] : [] });
+    setName(name);
+  };
 
   const candidateSafety = candidate ? keySafety(candidate.vk, candidate.companions) : null;
 
@@ -142,21 +158,18 @@ export default function Keys({ t, config, save }: Props) {
         )}
         {notice && <p className="mt-3 text-center text-sm text-warn">{notice}</p>}
 
-        {!candidate && !capturing && (
-          <div className="mt-4 border-t border-border/40 pt-4">
-            <p className="mb-2 text-xs text-text-muted">{t("keys.presets")}</p>
-            <div className="flex flex-wrap gap-2">
-              {PRESETS.map((p) => (
-                <Button key={p.name} className="h-8 px-3" disabled={exists(p)} onClick={() => { setCandidate(p); setName(p.name); }}>
-                  {p.name}
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
       </Card>
 
-      <SectionTitle>{t("keys.list")}</SectionTitle>
+      <KeyGuide
+        t={t}
+        lang={lang}
+        mode="bridge"
+        onPick={pickFromGuide}
+        pickLabel={t("manual.use")}
+        disabled={(key) => config.rules.some((r) => r.vk === key.vk && r.ext === key.ext)}
+      />
+
+      <SectionTitle className="mt-5">{t("keys.list")}</SectionTitle>
       {config.rules.length === 0 ? (
         <p className="text-sm text-text-muted">{t("keys.none")}</p>
       ) : (
