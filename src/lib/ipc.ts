@@ -10,6 +10,20 @@ export interface Rule {
   companions: number[];
 }
 
+export interface Substitution {
+  fromScan: number;
+  fromExt: boolean;
+  toScan: number;
+  toExt: boolean;
+  label: string;
+}
+
+export interface RemapStatus {
+  applied: boolean;
+  pendingReboot: boolean;
+  foreign: boolean;
+}
+
 export interface Config {
   active: boolean;
   rules: Rule[];
@@ -18,6 +32,8 @@ export interface Config {
   radioBlock: boolean;
   radioDisabledIds: string[];
   onboarded: boolean;
+  substitutions: Substitution[];
+  remapWrittenAt: number;
   notifications: boolean;
   language: "es" | "en";
   theme: "dark" | "light" | "system";
@@ -95,4 +111,7 @@ export const api = {
   exportDiagnostics: () => invoke<string>("export_diagnostics"),
   systemChecks: () => invoke<Check[]>("system_checks"),
   applyFix: (fix: string) => invoke<Check[]>("apply_fix", { fix }),
+  remapStatus: () => invoke<RemapStatus>("remap_status"),
+  remapApply: (substitutions: Substitution[]) => invoke<RemapStatus>("remap_apply", { substitutions }),
+  scanForVk: (vk: number) => invoke<number>("scan_for_vk", { vk }),
 };

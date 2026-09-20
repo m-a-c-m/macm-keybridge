@@ -7,6 +7,7 @@ mod diagnostics;
 mod engine;
 mod hook;
 mod radio;
+mod remap;
 mod system;
 mod tray;
 
@@ -22,6 +23,7 @@ use tauri_plugin_notification::NotificationExt;
 pub const IDENTIFIER: &str = "es.miguelacm.keybridge";
 const RADIO_ARG: &str = "--radio";
 const CLEANUP_ARG: &str = "--cleanup";
+const REMAP_ARG: &str = "--remap";
 
 #[derive(Clone, Copy)]
 enum Pause {
@@ -376,6 +378,38 @@ fn relaunch_admin(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn remap_status(app: AppHandle) -> remap::RemapStatus {
+    let config = app.state::<AppState>().config();
+    remap::status(&config.substitutions, config.remap_written_at)
+}
+
+#[tauri::command]
+fn scan_for_vk(vk: u16) -> u16 {
+    remap::scan_for_vk(vk)
+}
+
+#[tauri::command]
+async fn remap_apply(app: AppHandle, substitutions: Vec<config::Substitution>) -> Result<remap::RemapStatus, String> {
+    let state = app.state::<AppState>();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let config = persist(&app, |c| {
+        c.substitutions = substitutions.clone();
+        c.remap_written_at = now;
+    });
+    let config = config.validate()?;
+    if state.elevated {
+        remap::write(&config.substitutions)?;
+    } else {
+        system::run_self_elevated(&[REMAP_ARG])?;
+    }
+    let status = remap::status(&config.substitutions, config.remap_written_at);
+    if !status.applied && !status.pending_reboot {
+        return Err("remap not stored".into());
+    }
+    Ok(status)
+}
+
+#[tauri::command]
 async fn system_checks() -> Vec<checks::Check> {
     checks::run()
 }
@@ -407,11 +441,26 @@ async fn radio_set_blocked(app: AppHandle, blocked: bool) -> Result<RadioStatus,
 #[tauri::command]
 async fn undo_all(app: AppHandle) -> Result<(), String> {
     let radio = radio_block_off(&app).err();
+    let remap = if app.state::<AppState>().config().substitutions.is_empty() && remap::current().is_none() {
+        None
+    } else {
+        persist(&app, |c| {
+            c.substitutions.clear();
+            c.remap_written_at = 0;
+        });
+        if app.state::<AppState>().elevated {
+            remap::write(&[]).err()
+        } else {
+            system::run_self_elevated(&[REMAP_ARG]).err()
+        }
+    };
     let autostart = system::remove_autostart().err();
     app.state::<AppState>().autostart_stale.store(false, Ordering::Relaxed);
-    match (radio, autostart) {
-        (None, None) => Ok(()),
-        (r, a) => Err([r, a].into_iter().flatten().collect::<Vec<_>>().join("; ")),
+    let errors: Vec<String> = [radio, remap, autostart].into_iter().flatten().collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 
@@ -480,6 +529,14 @@ fn radio_helper(args: &[String]) -> i32 {
     pending as i32
 }
 
+fn remap_helper() -> i32 {
+    let Some(dir) = Store::default_dir() else { return 1 };
+    match remap::write(&Store::new(&dir).load().substitutions) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
 // Invoked by the uninstaller: reverts every system change KeyBridge made.
 fn cleanup_helper() -> i32 {
     let Some(dir) = Store::default_dir() else { return 0 };
@@ -487,7 +544,7 @@ fn cleanup_helper() -> i32 {
     let mut config = store.load();
     let to_enable: Vec<String> =
         radio::list().into_iter().filter(|d| !d.enabled && config.radio_disabled_ids.contains(&d.id)).map(|d| d.id).collect();
-    let needs_admin = !to_enable.is_empty() || system::has_admin_task();
+    let needs_admin = !to_enable.is_empty() || system::has_admin_task() || remap::current().is_some();
     if needs_admin && !system::is_elevated() {
         return match system::run_self_elevated(&[CLEANUP_ARG]) {
             Ok(code) => code as i32,
@@ -495,9 +552,12 @@ fn cleanup_helper() -> i32 {
         };
     }
     radio::set_enabled(&to_enable, true);
+    let _ = remap::write(&[]);
     let failed = system::remove_autostart().is_err();
     config.radio_block = false;
     config.radio_disabled_ids.clear();
+    config.substitutions.clear();
+    config.remap_written_at = 0;
     let _ = store.save(&config);
     failed as i32
 }
@@ -508,6 +568,7 @@ fn main() {
         Some(engine::ENGINE_ARG) => std::process::exit(engine::run_child()),
         Some(RADIO_ARG) => std::process::exit(radio_helper(&args[1..])),
         Some(CLEANUP_ARG) => std::process::exit(cleanup_helper()),
+        Some(REMAP_ARG) => std::process::exit(remap_helper()),
         _ => {}
     }
     system::wait_for_previous_instance();
@@ -565,6 +626,9 @@ fn main() {
             set_autostart,
             relaunch_admin,
             system_checks,
+            remap_status,
+            remap_apply,
+            scan_for_vk,
             apply_fix,
             radio_status,
             radio_set_blocked,

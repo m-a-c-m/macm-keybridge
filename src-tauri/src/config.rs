@@ -6,6 +6,16 @@ const MODIFIER_VKS: [u16; 8] = [0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Substitution {
+    pub from_scan: u16,
+    pub from_ext: bool,
+    pub to_scan: u16,
+    pub to_ext: bool,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Rule {
     pub id: String,
     pub name: String,
@@ -27,6 +37,8 @@ pub struct Config {
     pub radio_block: bool,
     pub radio_disabled_ids: Vec<String>,
     pub onboarded: bool,
+    pub substitutions: Vec<Substitution>,
+    pub remap_written_at: u64,
     pub notifications: bool,
     pub language: String,
     pub theme: String,
@@ -42,6 +54,8 @@ impl Default for Config {
             radio_block: false,
             radio_disabled_ids: Vec::new(),
             onboarded: false,
+            substitutions: Vec::new(),
+            remap_written_at: 0,
             notifications: true,
             language: "es".into(),
             theme: "dark".into(),
@@ -78,6 +92,15 @@ impl Config {
                 self.pause_hotkey = None;
             }
         }
+        if self.substitutions.len() > 16 {
+            return Err("too many substitutions".into());
+        }
+        for sub in &mut self.substitutions {
+            if sub.from_scan == 0 || sub.from_scan > 0xFF || sub.to_scan == 0 || sub.to_scan > 0xFF {
+                return Err("invalid scan code".into());
+            }
+            sub.label = sub.label.trim().chars().take(60).collect();
+        }
         self.radio_disabled_ids.retain(|id| !id.is_empty() && id.len() < 400);
         self.radio_disabled_ids.truncate(16);
         if !matches!(self.language.as_str(), "es" | "en") {
@@ -111,7 +134,7 @@ impl Store {
     pub fn load(&self) -> Config {
         std::fs::read_to_string(&self.path)
             .ok()
-            .and_then(|s| serde_json::from_str::<Config>(&s).ok())
+            .and_then(|s| serde_json::from_str::<Config>(s.trim_start_matches('\u{feff}').trim()).ok())
             .and_then(|c| c.validate().ok())
             .unwrap_or_default()
     }

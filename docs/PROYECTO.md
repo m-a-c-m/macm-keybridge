@@ -124,11 +124,24 @@ haya desactivado el usuario por su cuenta.
 5. Al capturar una tecla ya mantenida, el temporizador se reiniciaba con cada repetición y nunca
    terminaba → el temporizador arranca solo con la primera pulsación.
 
-## 9. Roadmap
+## 9. Sustitución permanente (Scancode Map)
 
-1. **Diagnóstico y soluciones** (en curso): comprobar teclas filtro, remapeos residuales, filtros de
-   teclado, drivers y BIOS; prueba guiada que distingue fallo de hardware de fallo de software; y
-   recomendaciones concretas.
-2. **Modo sustitución**: que una capa (por ejemplo Ctrl derecho) escriba las teclas rotas.
+Para teclas que no responden nunca: una tecla que el usuario no usa pasa a escribir la rota. Se
+guarda en `HKLMSYSTEMCurrentControlSetControlKeyboard LayoutScancode Map` con el formato
+documentado por Microsoft: 8 bytes a cero, número de entradas (mapeos + 1), un DWORD por mapeo con
+el código nuevo en la palabra alta y el viejo en la baja, y un DWORD a cero de cierre. Las teclas
+extendidas llevan el prefijo `0xE0`.
+
+Ventajas: funciona sin programas abiertos, para cualquier usuario y en la pantalla de inicio de
+sesión. Requiere administrador una vez y reiniciar. Verificado en el equipo de Miguel escribiendo
+y borrando el valor con el ayudante `--remap` (bytes exactos `00×8 · 02 00 00 00 · 64 00 12 00 ·
+00 00 00 00`). Se deshace desde la propia pantalla, desde «Deshacer todos los cambios» y al
+desinstalar.
+
+## 10. Roadmap
+
+1. Asistente que prueba teclas candidatas y recomienda la mejor tecla puente.
+2. Modo capa (mantener una tecla y pulsar otra) como alternativa sin reiniciar.
+3. Pausa automática al conectar un teclado externo y aviso sobre la pantalla de inicio de sesión.
 3. README con la estructura estándar, workflow de release e icono, y publicación en GitHub.
 4. Ficha descargable en miguelacm.es/tools.
