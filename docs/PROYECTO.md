@@ -14,7 +14,8 @@
 8. [Errores encontrados durante el desarrollo](#8-errores-encontrados-durante-el-desarrollo)
 9. [Sustitución permanente](#9-sustitución-permanente-scancode-map)
 10. [Manual de teclas](#10-manual-de-teclas)
-11. [Roadmap](#11-roadmap)
+11. [Cómo se presenta al usuario](#11-cómo-se-presenta-al-usuario)
+12. [Roadmap](#12-roadmap)
 
 ---
 
@@ -156,7 +157,28 @@ tablas de códigos duplicadas.
 Las funciones de Fn varían entre modelos, así que la primera línea del manual avisa de que manda
 el icono impreso en la tecla.
 
-## 11. Roadmap
+## 11. Cómo se presenta al usuario
+
+La interfaz se organiza por **problemas**, no por mecanismos. El asistente y el Inicio preguntan
+«¿Qué le pasa a tu teclado?» con cinco respuestas, y cada una lleva directa a su solución:
+
+| Problema | Solución | Necesita la app abierta |
+|---|---|---|
+| Algunas teclas solo van si mantengo otra pulsada | Anular teclas (tecla puente) | Sí |
+| Algunas teclas no van nunca | Cambiar teclas (Scancode Map) | No |
+| Una tecla me molesta (Copilot, Windows, Bloq Mayús…) | Anular teclas | Sí |
+| Se me activa el modo avión sin querer | Modo avión (colección HID de radio) | No |
+| No sé qué le pasa | Diagnóstico | — |
+
+- **Inicio** resume en frases lo que está haciendo la app («F8 no hace nada», «Fn + F8 todavía
+  activa el modo avión», «KeyBridge no se abre solo…»), cada una con su botón «Cambiar».
+- **La tecla puente y el modo avión se presentan unidos**: si la tecla anulada es la del modo avión
+  (F8 en el LOQ), la propia pantalla muestra la tarjeta para anularlo con la explicación de por qué
+  van por caminos distintos. Antes estaba escondido en Ajustes y confundía.
+- Vocabulario: «anular» (no hace nada), «cambiar» (escribe otra), «tecla puente» solo para la que
+  se deja pisada.
+
+## 12. Roadmap
 
 1. Modo capa (mantener una tecla y pulsar otra) como alternativa sin reiniciar.
 2. Pausa automática al conectar un teclado externo y aviso sobre la pantalla de inicio de sesión.

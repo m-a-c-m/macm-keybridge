@@ -1,7 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button, Card, PageHeader, SectionTitle, Toggle } from "../components/ui";
-import AirplaneKey from "../components/AirplaneKey";
 import AutostartPicker from "../components/AutostartPicker";
 import { api, type Config, type Status } from "../lib/ipc";
 import type { T } from "../lib/i18n";
@@ -98,12 +97,6 @@ export default function Settings({ t, config, status, save, version }: Props) {
         <div className="mt-2">
           <Toggle checked={config.startMinimized} onChange={(startMinimized) => save({ ...config, startMinimized })} label={t("settings.startMinimized")} />
         </div>
-      </Card>
-
-      <Card className="mb-4">
-        <SectionTitle>{t("air.title")}</SectionTitle>
-        <p className="mb-3 text-xs leading-relaxed text-text-muted">{t("wiz.airBody")}</p>
-        <AirplaneKey t={t} />
       </Card>
 
       <Card className="mb-4">

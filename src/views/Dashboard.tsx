@@ -1,8 +1,11 @@
+import { useEffect, useState, type ReactNode } from "react";
 import type { View } from "../App";
+import Goals, { GOAL_VIEW } from "../components/Goals";
 import { Button, Card, Keycap, PageHeader, SectionTitle } from "../components/ui";
-import { api, type Config, type Status } from "../lib/ipc";
+import { api, type AutostartMode, type Config, type RadioStatus, type RemapStatus, type Status } from "../lib/ipc";
 import type { T } from "../lib/i18n";
 import { vkName } from "../lib/keys";
+import { isAirplaneKey } from "../lib/guide";
 
 interface Props {
   t: T;
@@ -19,8 +22,21 @@ function formatRemaining(secs: number) {
 }
 
 export default function Dashboard({ t, config, status, setStatus, goTo }: Props) {
+  const [radio, setRadio] = useState<RadioStatus | null>(null);
+  const [remap, setRemap] = useState<RemapStatus | null>(null);
+  const [autostart, setAutostart] = useState<AutostartMode | null>(null);
+
+  useEffect(() => {
+    api.radioStatus().then(setRadio).catch(() => {});
+    api.remapStatus().then(setRemap).catch(() => {});
+    api.getAutostart().then(setAutostart).catch(() => {});
+  }, []);
+
   const state = !status.enabled ? "off" : status.paused ? "paused" : "on";
   const enabledRules = config.rules.filter((r) => r.enabled);
+  const airBlocked = !!radio && radio.blocked && !radio.reenabled;
+  const airRule = enabledRules.find((r) => isAirplaneKey(r.vk));
+  const nothing = enabledRules.length === 0 && config.substitutions.length === 0 && !airBlocked;
 
   const ring = {
     on: "border-primary bg-primary/10 text-primary pulse-ring",
@@ -30,118 +46,146 @@ export default function Dashboard({ t, config, status, setStatus, goTo }: Props)
 
   return (
     <>
-      <PageHeader title={t("dash.title")} />
+      <PageHeader title={t("dash.title")} intro={t("dash.intro")} />
 
-      {config.rules.length === 0 && (
-        <Card className="mb-5 flex items-center justify-between gap-6 border-primary/40">
-          <div>
-            <h2 className="font-display text-lg font-semibold">{t("dash.emptyTitle")}</h2>
-            <p className="text-sm text-text-muted">{t("dash.emptyBody")}</p>
-          </div>
-          <Button variant="primary" onClick={() => goTo("keys")}>
-            {t("dash.emptyCta")}
-          </Button>
+      {nothing && (
+        <Card className="mb-5">
+          <SectionTitle>{t("dash.askTitle")}</SectionTitle>
+          <Goals t={t} onPick={(g) => goTo(GOAL_VIEW[g])} />
         </Card>
       )}
 
-      <Card className="mb-5 flex flex-col items-center gap-6 py-8 sm:flex-row sm:items-center sm:gap-10 sm:px-10">
-        <button
-          type="button"
-          aria-pressed={status.enabled}
-          onClick={() => api.setActive(!status.enabled).then(setStatus)}
-          className={`grid h-36 w-36 shrink-0 cursor-pointer place-items-center rounded-full border-4 transition ${ring}`}
-        >
-          <span className="flex flex-col items-center gap-1">
-            <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M12 3v8M6.3 6.3a8 8 0 1011.4 0" />
-            </svg>
-            <span className="text-xs font-semibold tracking-wider uppercase">{status.enabled ? t("dash.toggleOff") : t("dash.toggleOn")}</span>
-          </span>
-        </button>
-        <div className="flex-1 text-center sm:text-left">
-          <h2 className="font-display text-2xl font-semibold">{t(`dash.${state}`)}</h2>
-          <p className="mt-1 text-sm text-text-muted">{t(`dash.${state}Hint`)}</p>
-          {enabledRules.length > 0 && (
-            <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-              {enabledRules.map((r) => (
-                <Keycap key={r.id} tone={state === "on" ? "primary" : "default"}>
-                  {r.name || vkName(r.vk)}
-                </Keycap>
-              ))}
-            </div>
-          )}
-          {status.enabled && (
-            <div className="mt-5">
-              {status.paused ? (
-                <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-                  <Button variant="primary" onClick={() => api.resume().then(setStatus)}>
-                    {t("dash.resume")}
-                  </Button>
-                  {status.pauseRemainingSecs !== null && (
-                    <span className="text-sm text-warn tabular-nums">{t("dash.resumesIn", { t: formatRemaining(status.pauseRemainingSecs) })}</span>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                  <span className="mr-1 text-xs text-text-muted">{t("dash.pauseFor")}</span>
-                  {[1, 5, 15, 60].map((m) => (
-                    <Button key={m} className="h-8 px-3" onClick={() => api.pauseFor(m).then(setStatus)}>
-                      {m} min
+      {enabledRules.length > 0 && (
+        <Card className="mb-5 flex flex-col items-center gap-6 py-7 sm:flex-row sm:items-center sm:gap-10 sm:px-10">
+          <button
+            type="button"
+            aria-pressed={status.enabled}
+            onClick={() => api.setActive(!status.enabled).then(setStatus)}
+            className={`grid h-32 w-32 shrink-0 cursor-pointer place-items-center rounded-full border-4 transition ${ring}`}
+          >
+            <span className="flex flex-col items-center gap-1">
+              <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 3v8M6.3 6.3a8 8 0 1011.4 0" />
+              </svg>
+              <span className="text-xs font-semibold tracking-wider uppercase">{status.enabled ? t("dash.toggleOff") : t("dash.toggleOn")}</span>
+            </span>
+          </button>
+          <div className="flex-1 text-center sm:text-left">
+            <h2 className="font-display text-2xl font-semibold">{t(`dash.${state}`)}</h2>
+            <p className="mt-1 text-sm text-text-muted">{t(`dash.${state}Hint`)}</p>
+            {status.enabled && (
+              <div className="mt-5">
+                {status.paused ? (
+                  <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                    <Button variant="primary" onClick={() => api.resume().then(setStatus)}>
+                      {t("dash.resume")}
                     </Button>
-                  ))}
-                  <Button className="h-8 px-3" onClick={() => api.pauseFor(0).then(setStatus)}>
-                    {t("dash.untilResume")}
-                  </Button>
-                </div>
-              )}
-              {config.pauseHotkey && (
-                <p className="mt-3 text-xs text-text-muted">
-                  {t("dash.hotkey")}: <span className="font-mono text-text">{config.pauseHotkey}</span>
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </Card>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <SectionTitle>{t("dash.blocked")}</SectionTitle>
-          <p className="font-display text-3xl font-semibold tabular-nums gradient-text">{status.blockedCount.toLocaleString(config.language)}</p>
-          <p className="mt-1 text-xs text-text-muted">
-            {t("dash.rules")}: {status.activeRules}
-          </p>
+                    {status.pauseRemainingSecs !== null && (
+                      <span className="text-sm text-warn tabular-nums">{t("dash.resumesIn", { t: formatRemaining(status.pauseRemainingSecs) })}</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                    <span className="mr-1 text-xs text-text-muted">{t("dash.pauseFor")}</span>
+                    {[1, 5, 15, 60].map((m) => (
+                      <Button key={m} className="h-8 px-3" onClick={() => api.pauseFor(m).then(setStatus)}>
+                        {m} min
+                      </Button>
+                    ))}
+                    <Button className="h-8 px-3" onClick={() => api.pauseFor(0).then(setStatus)}>
+                      {t("dash.untilResume")}
+                    </Button>
+                  </div>
+                )}
+                {config.pauseHotkey && (
+                  <p className="mt-3 text-xs text-text-muted">
+                    {t("dash.hotkey")}: <span className="font-mono text-text">{config.pauseHotkey}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </Card>
-        <Card>
-          <SectionTitle>{t("dash.engine")}</SectionTitle>
+      )}
+
+      {!nothing && (
+        <Card className="mb-5">
+          <SectionTitle>{t("act.title")}</SectionTitle>
+          <div className="flex flex-col gap-2">
+            {enabledRules.map((r) => (
+              <Item key={r.id} tone={state === "on" ? "ok" : "warn"} onChange={() => goTo("keys")} t={t}>
+                <Keycap tone="primary">{r.name || vkName(r.vk)}</Keycap>
+                <span>{state === "on" ? t("act.rule") : t("act.rulePaused")}</span>
+              </Item>
+            ))}
+            {airRule && radio && radio.devices.length > 0 && !airBlocked && (
+              <Item tone="warn" onChange={() => goTo("airplane")} t={t}>
+                <span>{t("act.airMissing", { key: airRule.name || vkName(airRule.vk) })}</span>
+              </Item>
+            )}
+            {airBlocked && (
+              <Item tone="ok" onChange={() => goTo("airplane")} t={t}>
+                <span>{t("act.air")}</span>
+              </Item>
+            )}
+            {config.substitutions.map((s) => (
+              <Item key={`${s.fromScan}-${+s.fromExt}`} tone={remap?.pendingReboot ? "warn" : "ok"} onChange={() => goTo("substitute")} t={t}>
+                <Keycap tone="primary">{s.label}</Keycap>
+                <span>{remap?.pendingReboot ? t("act.subPending") : t("act.sub")}</span>
+              </Item>
+            ))}
+            {enabledRules.length > 0 && autostart !== null && (
+              <Item tone={autostart === "off" ? "warn" : "ok"} onChange={() => goTo("settings")} t={t}>
+                <span>{autostart === "off" ? t("act.noAutostart") : t("act.autostart")}</span>
+              </Item>
+            )}
+          </div>
+          <p className="mt-4 text-xs leading-relaxed text-text-muted">{t("act.foot")}</p>
+        </Card>
+      )}
+
+      {!nothing && (
+        <Card className="mb-5">
+          <SectionTitle>{t("dash.moreTitle")}</SectionTitle>
+          <Goals t={t} onPick={(g) => goTo(GOAL_VIEW[g])} />
+        </Card>
+      )}
+
+      <details className="glass rounded-2xl p-5 text-sm">
+        <summary className="cursor-pointer text-xs font-semibold tracking-wider text-text-muted uppercase select-none hover:text-text">
+          {t("dash.tech")}
+        </summary>
+        <div className="mt-3">
           <Row label={t("dash.engine")} ok={status.hookOk} value={status.hookOk ? t("dash.engineOk") : t("dash.engineFail")} />
           <Row label={t("dash.keysSeen")} ok={status.eventsSeen > 0} value={status.eventsSeen > 0 ? status.eventsSeen.toLocaleString(config.language) : t("dash.keysSeenNone")} />
+          <Row label={t("dash.blocked")} ok value={status.blockedCount.toLocaleString(config.language)} />
           <Row label={t("dash.admin")} ok={status.elevated} value={status.elevated ? t("dash.adminOk") : t("dash.adminNo")} />
           {status.airplane !== null && (
             <Row label={t("dash.airplane")} ok={!status.airplane} value={status.airplane ? t("dash.airplaneOn") : t("dash.airplaneOff")} />
           )}
-        </Card>
-      </div>
-
-      <Card className="mt-4">
-        <SectionTitle>{t("dash.howTitle")}</SectionTitle>
-        <ul className="flex list-disc flex-col gap-1.5 pl-5 text-xs leading-relaxed text-text-muted">
-          <li>{t("dash.how1")}</li>
-          <li>{t("dash.how2")}</li>
-          <li>{t("dash.how3")}</li>
-          <li>{t("dash.how4")}</li>
-        </ul>
-      </Card>
-
-      {!status.elevated && (
-        <Card className="mt-4 flex items-center justify-between gap-6">
-          <p className="text-xs leading-relaxed text-text-muted">{t("dash.adminHint")}</p>
-          <Button className="shrink-0" onClick={() => api.relaunchAdmin().catch(() => {})}>
-            {t("dash.relaunchAdmin")}
-          </Button>
-        </Card>
-      )}
+          {!status.elevated && (
+            <div className="mt-3 flex items-center justify-between gap-6 border-t border-border/40 pt-3">
+              <p className="text-xs leading-relaxed text-text-muted">{t("dash.adminHint")}</p>
+              <Button className="shrink-0" onClick={() => api.relaunchAdmin().catch(() => {})}>
+                {t("dash.relaunchAdmin")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </details>
     </>
+  );
+}
+
+function Item({ tone, children, onChange, t }: { tone: "ok" | "warn"; children: ReactNode; onChange: () => void; t: T }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border/40 px-3 py-2">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${tone === "ok" ? "bg-success" : "bg-warn"}`} />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm">{children}</div>
+      <Button variant="ghost" className="h-8 shrink-0 px-2 text-xs" onClick={onChange}>
+        {t("act.change")}
+      </Button>
+    </div>
   );
 }
 

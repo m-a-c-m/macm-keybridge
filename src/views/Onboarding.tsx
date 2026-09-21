@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Keycap, SafetyNote } from "../components/ui";
 import KeyboardMap from "../components/KeyboardMap";
-import AirplaneKey from "../components/AirplaneKey";
+import AirplaneLink from "../components/AirplaneLink";
 import AutostartPicker from "../components/AutostartPicker";
+import Goals, { GOAL_VIEW } from "../components/Goals";
 import { fromCapture } from "./Keys";
-import { type Config, type KeyObserved, type Rule } from "../lib/ipc";
+import type { View } from "../App";
+import { api, type Config, type KeyObserved, type Rule } from "../lib/ipc";
 import type { T } from "../lib/i18n";
-import { keySafety, newId, PRESETS, vkName, type Preset } from "../lib/keys";
+import { keySafety, newId, PRESETS, VK, vkName, type Preset } from "../lib/keys";
+import { isAirplaneKey, recommended } from "../lib/guide";
 import { useKeyStream, useSwallowBrowserKeys } from "../lib/useKeyStream";
 
 interface Props {
@@ -15,11 +18,11 @@ interface Props {
   save: (c: Config) => Promise<boolean>;
 }
 
-const STEPS = ["welcome", "key", "test", "airplane", "startup"] as const;
+const STEPS = ["goal", "explain", "key", "test", "startup"] as const;
 type Step = (typeof STEPS)[number];
 
-export default function Onboarding({ t, config, save }: Props) {
-  const [step, setStep] = useState<Step>("welcome");
+export default function Onboarding({ t, config, save, goTo }: Props & { goTo: (v: View) => void }) {
+  const [step, setStep] = useState<Step>("goal");
   const index = STEPS.indexOf(step);
   const next = () => setStep(STEPS[Math.min(index + 1, STEPS.length - 1)]!);
   const back = () => setStep(STEPS[Math.max(index - 1, 0)]!);
@@ -43,16 +46,23 @@ export default function Onboarding({ t, config, save }: Props) {
           </div>
         </div>
 
-        {step === "welcome" && <Welcome t={t} />}
-        {step === "key" && <PickKey t={t} config={config} save={save} bridge={bridge} />}
-        {step === "test" && <TestBridge t={t} bridge={bridge} />}
-        {step === "airplane" && (
+        {step === "goal" && (
           <div>
-            <h2 className="font-display text-xl font-semibold">{t("wiz.airTitle")}</h2>
-            <p className="mt-2 mb-4 text-sm leading-relaxed text-text-muted">{t("wiz.airBody")}</p>
-            <AirplaneKey t={t} />
+            <h1 className="font-display text-2xl font-semibold">{t("wiz.welcomeTitle")}</h1>
+            <p className="mt-2 mb-5 text-sm leading-relaxed text-text-muted">{t("wiz.goalBody")}</p>
+            <Goals
+              t={t}
+              onPick={(goal) => {
+                if (goal === "bridge") return next();
+                goTo(GOAL_VIEW[goal]);
+                finish();
+              }}
+            />
           </div>
         )}
+        {step === "explain" && <Explain t={t} />}
+        {step === "key" && <PickKey t={t} config={config} save={save} bridge={bridge} />}
+        {step === "test" && <TestBridge t={t} bridge={bridge} />}
         {step === "startup" && (
           <div>
             <h2 className="font-display text-xl font-semibold">{t("wiz.startTitle")}</h2>
@@ -72,13 +82,21 @@ export default function Onboarding({ t, config, save }: Props) {
             </Button>
           )}
           {step === "startup" ? (
-            <Button variant="primary" onClick={finish}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                goTo("dashboard");
+                finish();
+              }}
+            >
               {t("wiz.finish")}
             </Button>
           ) : (
-            <Button variant="primary" disabled={step === "key" && !bridge} onClick={next}>
-              {step === "welcome" ? t("wiz.start") : t("wiz.next")}
-            </Button>
+            step !== "goal" && (
+              <Button variant="primary" disabled={step === "key" && !bridge} onClick={next}>
+                {t("wiz.next")}
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -86,10 +104,10 @@ export default function Onboarding({ t, config, save }: Props) {
   );
 }
 
-function Welcome({ t }: { t: T }) {
+function Explain({ t }: { t: T }) {
   return (
     <div>
-      <h1 className="font-display text-2xl font-semibold">{t("wiz.welcomeTitle")}</h1>
+      <h2 className="font-display text-xl font-semibold">{t("wiz.explainTitle")}</h2>
       <p className="mt-2 text-sm leading-relaxed text-text-muted">{t("wiz.welcomeBody")}</p>
       <ol className="mt-5 flex flex-col gap-3">
         {[1, 2, 3].map((n) => (
@@ -114,6 +132,13 @@ function PickKey({ t, config, save, bridge }: Props & { bridge: Rule | undefined
   const add = (p: Preset) => {
     const others = config.rules.filter((r) => !(r.vk === p.vk && r.ext === p.ext));
     save({ ...config, rules: [...others.map((r) => ({ ...r, enabled: false })), { ...p, id: newId(), enabled: true }] });
+  };
+
+  const pick = async (vk: number, ext: boolean) => {
+    const scan = (await api.scanForVk(vk)) || PRESETS.find((p) => p.vk === vk)?.scan || 0;
+    if (!scan) return;
+    const copilot = vk === VK.F23;
+    add({ name: copilot ? "Copilot" : vkName(vk), vk, scan, ext, companions: copilot ? [VK.LWIN, VK.LSHIFT] : [] });
   };
 
   const done = () => {
@@ -144,10 +169,10 @@ function PickKey({ t, config, save, bridge }: Props & { bridge: Rule | undefined
         <Button variant={capturing ? "outline" : "primary"} className={capturing ? "pulse-ring border-primary text-primary" : ""} onClick={() => setCapturing((c) => !c)}>
           {capturing ? t("keys.capturing") : t("keys.capture")}
         </Button>
-        <span className="text-xs text-text-muted">{t("keys.presets")}:</span>
-        {PRESETS.slice(0, 4).map((p) => (
-          <Button key={p.name} className="h-8 px-3" onClick={() => add(p)}>
-            {p.name}
+        <span className="text-xs text-text-muted">{t("wiz.recommended")}</span>
+        {recommended("bridge").map((key) => (
+          <Button key={key.vk} className="h-8 px-3" onClick={() => pick(key.vk, key.ext)}>
+            {key.vk === VK.F23 ? "Copilot" : vkName(key.vk)}
           </Button>
         ))}
       </div>
@@ -161,6 +186,11 @@ function PickKey({ t, config, save, bridge }: Props & { bridge: Rule | undefined
             <Keycap tone="primary">{bridge.name || vkName(bridge.vk)}</Keycap>
           </div>
           {safety && safety.level !== "safe" && <SafetyNote level={safety.level}>{t(safety.reason)}</SafetyNote>}
+        </div>
+      )}
+      {bridge && isAirplaneKey(bridge.vk) && (
+        <div className="mt-5">
+          <AirplaneLink t={t} keyName={bridge.name || vkName(bridge.vk)} />
         </div>
       )}
     </div>

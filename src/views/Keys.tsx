@@ -3,9 +3,10 @@ import { Button, Card, Keycap, PageHeader, SafetyNote, SectionTitle } from "../c
 import { api, type Config, type KeyObserved, type Rule } from "../lib/ipc";
 import { useKeyStream, useSwallowBrowserKeys } from "../lib/useKeyStream";
 import type { Lang, T } from "../lib/i18n";
-import { hex, keySafety, MODIFIERS, newId, PRESETS, VK, vkName, type Preset } from "../lib/keys";
+import { ANNOYING, hex, keySafety, MODIFIERS, newId, PRESETS, VK, vkName, type Preset } from "../lib/keys";
 import KeyGuide from "../components/KeyGuide";
-import type { GuideKey } from "../lib/guide";
+import AirplaneLink from "../components/AirplaneLink";
+import { isAirplaneKey, type GuideKey } from "../lib/guide";
 
 interface Props {
   t: T;
@@ -90,6 +91,7 @@ export default function Keys({ t, lang, config, save }: Props) {
   };
 
   const candidateSafety = candidate ? keySafety(candidate.vk, candidate.companions) : null;
+  const airplaneRule = config.rules.find((r) => r.enabled && isAirplaneKey(r.vk));
 
   return (
     <>
@@ -158,7 +160,21 @@ export default function Keys({ t, lang, config, save }: Props) {
         )}
         {notice && <p className="mt-3 text-center text-sm text-warn">{notice}</p>}
 
+        {!candidate && !capturing && (
+          <div className="mt-4 border-t border-border/40 pt-4">
+            <p className="mb-2 text-xs text-text-muted">{t("keys.annoying")}</p>
+            <div className="flex flex-wrap gap-2">
+              {ANNOYING.map((p) => (
+                <Button key={p.name} className="h-8 px-3" disabled={exists(p)} onClick={() => { setNotice(null); setCandidate(p); setName(p.name); }}>
+                  {p.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </Card>
+
+      {airplaneRule && <AirplaneLink t={t} keyName={airplaneRule.name || vkName(airplaneRule.vk)} />}
 
       <KeyGuide
         t={t}

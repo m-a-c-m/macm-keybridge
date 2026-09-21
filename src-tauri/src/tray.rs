@@ -11,14 +11,14 @@ const ICON_OFF: &[u8] = include_bytes!("../icons/tray/off.png");
 fn t(lang: &str, key: &str) -> &'static str {
     let es = lang != "en";
     match key {
-        "on" => if es { "Puente activo" } else { "Bridge active" },
+        "on" => if es { "Funcionando" } else { "Running" },
         "paused" => if es { "En pausa" } else { "Paused" },
-        "off" => if es { "Puente desactivado" } else { "Bridge disabled" },
+        "off" => if es { "Apagado" } else { "Off" },
         "resume" => if es { "Reanudar" } else { "Resume" },
-        "enable" => if es { "Activar puente" } else { "Enable bridge" },
+        "enable" => if es { "Encender" } else { "Turn on" },
         "pause" => if es { "Pausar" } else { "Pause" },
         "untilResume" => if es { "Hasta reanudar" } else { "Until resumed" },
-        "open" => if es { "Abrir panel" } else { "Open panel" },
+        "open" => if es { "Abrir KeyBridge" } else { "Open KeyBridge" },
         "quit" => if es { "Salir" } else { "Quit" },
         _ => "",
     }

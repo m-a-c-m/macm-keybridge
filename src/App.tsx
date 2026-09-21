@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type Bootstrap, type Config, type Status } from "./lib/ipc";
 import { translator } from "./lib/i18n";
@@ -9,16 +9,18 @@ import Settings from "./views/Settings";
 import Onboarding from "./views/Onboarding";
 import Diagnose from "./views/Diagnose";
 import Substitute from "./views/Substitute";
+import Airplane from "./views/Airplane";
 
-export type View = "dashboard" | "keys" | "substitute" | "tester" | "diagnose" | "settings";
+export type View = "dashboard" | "keys" | "substitute" | "airplane" | "tester" | "diagnose" | "settings";
 
-const NAV: { id: View; label: string; icon: string }[] = [
+const NAV: { id: View; label: string; icon: string; group?: string }[] = [
   { id: "dashboard", label: "nav.dashboard", icon: "M3 12l9-8 9 8M5 10v10h14V10" },
-  { id: "keys", label: "nav.keys", icon: "M4 14h6v6H4zM14 14h6v6h-6zM7 14v-3a5 5 0 0110 0v3" },
+  { id: "keys", label: "nav.keys", group: "nav.solutions", icon: "M4 14h6v6H4zM14 14h6v6h-6zM7 14v-3a5 5 0 0110 0v3" },
   { id: "substitute", label: "nav.substitute", icon: "M4 7h9a4 4 0 010 8H8m0 0l3-3m-3 3l3 3M20 7l-3 3m3-3l-3-3" },
-  { id: "tester", label: "nav.tester", icon: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10" },
+  { id: "airplane", label: "nav.airplane", icon: "M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" },
+  { id: "tester", label: "nav.tester", group: "nav.tools", icon: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10" },
   { id: "diagnose", label: "nav.diagnose", icon: "M12 3a6 6 0 016 6c0 2.5-1.5 3.5-2 5H8c-.5-1.5-2-2.5-2-5a6 6 0 016-6zM9 19h6M10 22h4" },
-  { id: "settings", label: "nav.settings", icon: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 002.9-1.2V3a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" },
+  { id: "settings", label: "nav.settings", group: "", icon: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 002.9-1.2V3a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" },
 ];
 
 function applyTheme(theme: Config["theme"]) {
@@ -73,7 +75,7 @@ export default function App() {
   }
 
   if (!config.onboarded) {
-    return <Onboarding t={t} config={config} save={save} />;
+    return <Onboarding t={t} config={config} save={save} goTo={setView} />;
   }
 
   return (
@@ -90,25 +92,29 @@ export default function App() {
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setView(item.id)}
-              className={`flex h-10 cursor-pointer items-center gap-3 rounded-xl px-3 text-sm transition ${
-                view === item.id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text"
-              }`}
-            >
-              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d={item.icon} />
-              </svg>
-              {t(item.label)}
-            </button>
+            <Fragment key={item.id}>
+              {item.group !== undefined && (
+                <div className="mt-4 mb-1 min-h-2 px-3 text-[10px] font-semibold tracking-wider text-text-muted/70 uppercase">{item.group && t(item.group)}</div>
+              )}
+              <button
+                type="button"
+                onClick={() => setView(item.id)}
+                className={`flex h-10 cursor-pointer items-center gap-3 rounded-xl px-3 text-sm transition ${
+                  view === item.id ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={item.icon} />
+                </svg>
+                {t(item.label)}
+              </button>
+            </Fragment>
           ))}
         </nav>
         <div className="mt-auto rounded-xl border border-border/40 p-3 text-xs">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${status.blocking ? "bg-success" : status.paused ? "bg-warn" : "bg-text-muted"}`} />
-            <span className="text-text">{status.blocking ? t("dash.on") : status.paused ? t("dash.paused") : t("dash.off")}</span>
+            <span className="text-text">{status.blocking ? t("side.on") : status.paused ? t("side.paused") : t("side.off")}</span>
           </div>
           <p className="mt-1 text-text-muted">{t("tagline")}</p>
         </div>
@@ -128,6 +134,7 @@ export default function App() {
           {view === "tester" && <Tester t={t} />}
           {view === "diagnose" && <Diagnose t={t} />}
           {view === "substitute" && <Substitute t={t} lang={config.language} config={config} save={save} />}
+          {view === "airplane" && <Airplane t={t} />}
           {view === "settings" && <Settings t={t} config={config} status={status} save={save} version={boot.version} />}
         </div>
       </main>

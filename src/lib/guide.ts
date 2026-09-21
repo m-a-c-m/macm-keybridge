@@ -14,6 +14,7 @@ export interface GuideKey {
   bridge: Fitness;
   swap: Fitness;
   note?: Text;
+  airplane?: boolean;
 }
 
 const FN_VARIES: Text = {
@@ -94,9 +95,10 @@ export const GUIDE: GuideKey[] = [
     fn: { es: "Activa el modo avión y te deja sin Wi-Fi.", en: "Turns on airplane mode and leaves you without Wi-Fi." },
     bridge: "best",
     swap: "best",
+    airplane: true,
     note: {
-      es: "Si eliges esta, activa en Ajustes «Anular la tecla de modo avión»: así Fn + F8 deja de cortar el Wi-Fi.",
-      en: "If you pick this one, turn on “Block the airplane-mode key” in Settings so Fn + F8 stops cutting the Wi-Fi.",
+      es: "Si la eliges, KeyBridge te ofrece anular también el modo avión, para que rozar Fn no te deje sin Wi-Fi.",
+      en: "If you pick it, KeyBridge offers to block airplane mode too, so brushing Fn does not cut your Wi-Fi.",
     },
   },
   {
@@ -198,19 +200,25 @@ export const GUIDE: GuideKey[] = [
     vk: 0x91,
     ext: false,
     group: "locks",
-    alone: { es: "Bloq Despl no hace nada salvo en Excel. La mejor candidata.", en: "Scroll Lock does nothing except in Excel. The best candidate." },
-    bridge: "best",
-    swap: "best",
-    note: { es: "En este portátil no tiene tecla propia: se hace con Fn + K.", en: "This laptop has no dedicated key for it: it is Fn + K." },
+    alone: { es: "Bloq Despl no hace nada salvo en Excel.", en: "Scroll Lock does nothing except in Excel." },
+    bridge: "careful",
+    swap: "good",
+    note: {
+      es: "En muchos portátiles no tiene tecla propia (se hace con Fn + K): como puente obligaría a dejar dos teclas pisadas.",
+      en: "Many laptops have no dedicated key for it (it is Fn + K): as a bridge you would have to hold two keys.",
+    },
   },
   {
     vk: 0x13,
     ext: false,
     group: "locks",
     alone: { es: "Pausa no hace nada en Windows moderno.", en: "Pause does nothing in modern Windows." },
-    bridge: "best",
-    swap: "best",
-    note: { es: "En este portátil no tiene tecla propia: se hace con Fn + P.", en: "This laptop has no dedicated key for it: it is Fn + P." },
+    bridge: "careful",
+    swap: "good",
+    note: {
+      es: "En muchos portátiles no tiene tecla propia (se hace con Fn + P): como puente obligaría a dejar dos teclas pisadas.",
+      en: "Many laptops have no dedicated key for it (it is Fn + P): as a bridge you would have to hold two keys.",
+    },
   },
   {
     vk: 0x90,
@@ -304,4 +312,8 @@ export function ranked(mode: "bridge" | "swap"): GuideKey[] {
 
 export function recommended(mode: "bridge" | "swap"): GuideKey[] {
   return GUIDE.filter((k) => k[mode] === "best");
+}
+
+export function isAirplaneKey(vk: number): boolean {
+  return GUIDE.some((k) => k.vk === vk && k.airplane);
 }

@@ -1,4 +1,5 @@
 import type { Rule } from "./ipc";
+import { isAirplaneKey } from "./guide";
 
 export const VK = {
   LWIN: 0x5b,
@@ -83,7 +84,7 @@ const BOOT_KEYS = new Set([0x1b, 0x0d, 0x2e, 0x70, 0x71, 0x79, 0x7a, 0x7b]);
 export function keySafety(vk: number, companions: number[]): { level: Safety; reason: string } {
   if (vk === VK.F23 && companions.length > 0) return { level: "info", reason: "safety.copilot" };
   if (BOOT_KEYS.has(vk)) return { level: "danger", reason: "safety.boot" };
-  if (vk === VK.LWIN || vk === VK.RWIN) return { level: "danger", reason: "safety.win" };
+  if (vk === VK.LWIN || vk === VK.RWIN) return { level: "warn", reason: "safety.win" };
   const common =
     MODIFIERS.has(vk) ||
     (vk >= 0x30 && vk <= 0x39) ||
@@ -91,6 +92,7 @@ export function keySafety(vk: number, companions: number[]): { level: Safety; re
     [0x08, 0x09, 0x20, 0x25, 0x26, 0x27, 0x28, 0x14].includes(vk) ||
     (vk >= 0xba && vk <= 0xe2);
   if (common) return { level: "warn", reason: "safety.common" };
+  if (isAirplaneKey(vk)) return { level: "info", reason: "safety.airplane" };
   if (vk >= 0x72 && vk <= 0x78) return { level: "info", reason: "safety.fnrow" };
   return { level: "safe", reason: "safety.safe" };
 }
@@ -106,6 +108,14 @@ export const PRESETS: Preset[] = [
   { name: "RCtrl", vk: 0xa3, scan: 0x1d, ext: true, companions: [] },
   { name: "ScrollLock", vk: 0x91, scan: 0x46, ext: false, companions: [] },
   { name: "Pause", vk: 0x13, scan: 0x45, ext: false, companions: [] },
+];
+
+export const ANNOYING: Preset[] = [
+  { name: "Copilot", vk: VK.F23, scan: 0x6e, ext: false, companions: [VK.LWIN, VK.LSHIFT] },
+  { name: "Windows", vk: VK.LWIN, scan: 0x5b, ext: true, companions: [] },
+  { name: "CapsLock", vk: 0x14, scan: 0x3a, ext: false, companions: [] },
+  { name: "Insert", vk: 0x2d, scan: 0x52, ext: true, companions: [] },
+  { name: "F1", vk: 0x70, scan: 0x3b, ext: false, companions: [] },
 ];
 
 export function newId(): string {
