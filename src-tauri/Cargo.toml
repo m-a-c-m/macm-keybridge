@@ -1,6 +1,6 @@
 [package]
 name = "macm-keybridge"
-version = "0.2.0"
+version = "1.0.0"
 description = "MACM KeyBridge - rescue broken laptop keys with a held bridge key"
 authors = ["Miguel Angel Colorado Marin <https://miguelacm.es>"]
 license = "MIT"

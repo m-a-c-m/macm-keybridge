@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MACM KeyBridge",
   "mainBinaryName": "macm-keybridge",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "identifier": "es.miguelacm.keybridge",
   "build": {
     "frontendDist": "../dist",
@@ -41,8 +41,8 @@
     "publisher": "Miguel Angel Colorado Marin (MACM)",
     "copyright": "Copyright (c) 2026 Miguel Angel Colorado Marin",
     "category": "Utility",
-    "shortDescription": "Rescue broken laptop keys with a held bridge key",
-    "longDescription": "MACM KeyBridge silences the key you keep pressed as an electrical bridge on a damaged keyboard matrix, so the keys that depend on it work again. 100% local: no network, no telemetry, no accounts.",
+    "shortDescription": "Fix broken laptop keys and silence annoying ones",
+    "longDescription": "MACM KeyBridge makes a damaged laptop keyboard usable again: it silences the key you keep held as an electrical bridge, remaps keys that never respond, blocks the airplane-mode key and diagnoses whether the fault is Windows or the keyboard. It also silences keys that get in the way, such as Copilot or the Windows key. 100% local: no network, no telemetry, no accounts.",
     "homepage": "https://miguelacm.es",
     "licenseFile": "../LICENSE",
     "windows": {
