@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  check:
+    name: Checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  build:
+    name: Build installers
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Prepare optional code signing
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $configs = @()
+          if ($env:WINDOWS_CERTIFICATE) {
+            $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match "x64" } | Select-Object -Last 1
+            $command = "`"$($signtool.FullName)`" sign /f `"$pfx`" /p `"$env:WINDOWS_CERTIFICATE_PASSWORD`" /fd sha256 /tr http://timestamp.digicert.com /td sha256 %1"
+            $signConfig = Join-Path $env:RUNNER_TEMP "tauri.sign.conf.json"
+            @{ bundle = @{ windows = @{ signCommand = $command } } } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $signConfig
+            $configs += "--config `"$signConfig`""
+            Write-Host "Code signing enabled"
+          } else {
+            Write-Host "No certificate configured: installers will be unsigned"
+          }
+          "args=$($configs -join ' ')" >> $env:GITHUB_OUTPUT
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.TAG }}
+          releaseName: "MACM KeyBridge ${{ env.TAG }}"
+          releaseBody: "Instalador y versión portable para Windows 10/11 (x64). Verifica la descarga con SHA256SUMS.txt. Novedades en CHANGELOG.md.\n\nWindows 10/11 installer and portable build (x64). Verify your download with SHA256SUMS.txt. See CHANGELOG.md for details."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ steps.signing.outputs.args }}
+
+      - name: Upload portable executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "$env:TAG".TrimStart("v")
+          $portable = "MACM.KeyBridge_${version}_x64-portable.exe"
+          Copy-Item "src-tauri/target/release/macm-keybridge.exe" $portable
+          gh release upload "$env:TAG" $portable --clobber --repo "$env:GITHUB_REPOSITORY"
+
+  checksums:
+    name: Publish checksums
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute and upload SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir assets --pattern "*.exe" --pattern "*.msi" --pattern "*.zip" || true
+          cd assets
+          ls -la
+          find . -maxdepth 1 -type f ! -name "SHA256SUMS.txt" -printf "%f\0" | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
